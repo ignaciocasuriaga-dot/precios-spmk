@@ -2,8 +2,8 @@ name: Scrape Prices
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # 6am Uruguay todos los días
-  workflow_dispatch:        # también manual desde Actions
+    - cron: '0 9 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Correr scrapers
         run: |
@@ -30,26 +30,40 @@ jobs:
             'Merienda Hit': ['merienda hit'], 'Takis': ['takis'],
           };
           function matchesBrand(name) {
-            const lower = name.toLowerCase();
+            const lower = (name || '').toLowerCase();
             for (const [brand, terms] of Object.entries(BRAND_TERMS))
               if (terms.some(t => lower.includes(t))) return brand;
             return null;
           }
 
+          const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Accept-Language': 'es-UY,es;q=0.9' };
+
+          async function getCookies(base) {
+            try {
+              const r = await fetch(base, { headers: { ...HEADERS, 'Accept': 'text/html' }, signal: AbortSignal.timeout(15000), redirect: 'follow' });
+              const raw = r.headers.getSetCookie?.() || [];
+              const cookie = raw.map(c => c.split(';')[0]).join('; ');
+              console.log(`  cookies ${base}: ${cookie.slice(0,80)}...`);
+              return cookie;
+            } catch(e) { console.log(`  sin cookies ${base}: ${e.message}`); return ''; }
+          }
+
           const TATA_SKUS = ['823','138617','117854','152701','86737','152700','117853','117856','822','3776','169382','3765','3764','14577','3775','820','821','7776','3757','3759','832','828','136772','136769','136770','136768','86738','3735','86717','136863','18253','747','746','743','744','745','3685','3686','3689','86792','149195','149198','149193','149194','806','805','157041','86711','169928','169942','86714','148195'];
           const TERMS = ['bimbo','sorchantes','rapiditas','maestro cubano','nutrabien','tia rosa','salmas','artesano'];
 
-          async function vtexSku(base, sku, sup) {
+          async function vtexSku(base, sku, sup, cookie) {
             try {
               const r = await fetch(`${base}/api/catalog_system/pub/products/search?fq=skuId:${sku}`, {
-                headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+                headers: { ...HEADERS, ...(cookie ? { 'Cookie': cookie } : {}) },
                 signal: AbortSignal.timeout(10000),
               });
               if (!r.ok) return null;
+              const ct = r.headers.get('content-type') || '';
+              if (!ct.includes('json')) return null;
               const d = await r.json().catch(() => []);
               if (!Array.isArray(d) || !d[0]) return null;
               const item = d[0];
-              const brand = matchesBrand(item.productName || '');
+              const brand = matchesBrand(item.productName);
               if (!brand) return null;
               const offer = item.items?.[0]?.sellers?.[0]?.commertialOffer;
               const price = Number(offer?.Price || 0);
@@ -58,25 +72,27 @@ jobs:
             } catch { return null; }
           }
 
-          async function vtexSearch(base, term, sup) {
+          async function vtexSearch(base, term, sup, cookie) {
             try {
               const r = await fetch(`${base}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=49`, {
-                headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+                headers: { ...HEADERS, ...(cookie ? { 'Cookie': cookie } : {}) },
                 signal: AbortSignal.timeout(10000),
               });
-              if (!r.ok) return [];
-              if (!(r.headers.get('content-type') || '').includes('json')) return [];
+              if (!r.ok) { console.log(`  ${sup} ft=${term} → ${r.status}`); return []; }
+              const ct = r.headers.get('content-type') || '';
+              if (!ct.includes('json')) { console.log(`  ${sup} ft=${term} → no JSON (${ct})`); return []; }
               const d = await r.json().catch(() => []);
               if (!Array.isArray(d)) return [];
+              console.log(`  ${sup} ft=${term} → ${d.length} items`);
               return d.map(item => {
-                const brand = matchesBrand(item.productName || '');
+                const brand = matchesBrand(item.productName);
                 if (!brand) return null;
                 const offer = item.items?.[0]?.sellers?.[0]?.commertialOffer;
                 const price = Number(offer?.Price || 0);
                 if (!price) return null;
                 return { super: sup, sku: item.items?.[0]?.itemId, name: item.productName, brand, price, listPrice: offer.ListPrice || null, currency: 'UYU', url: `${base}${item.link || ''}`, imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '' };
               }).filter(Boolean);
-            } catch { return []; }
+            } catch(e) { console.log(`  ${sup} ft=${term} error: ${e.message}`); return []; }
           }
 
           async function main() {
@@ -85,14 +101,17 @@ jobs:
 
             // Tata
             console.log('🟡 Tata...');
-            (await Promise.all(TATA_SKUS.map(s => vtexSku('https://www.tata.com.uy', s, 'tata')))).forEach(add);
-            console.log(`✅ Tata: ${all.length}`);
+            const tataCookie = await getCookies('https://www.tata.com.uy');
+            (await Promise.all(TATA_SKUS.map(s => vtexSku('https://www.tata.com.uy', s, 'tata', tataCookie)))).forEach(add);
+            for (const term of TERMS) (await vtexSearch('https://www.tata.com.uy', term, 'tata', tataCookie)).forEach(add);
+            console.log(`✅ Tata: ${all.filter(p=>p.super==='tata').length}`);
 
             // Disco + Devoto + Tienda Inglesa
             for (const [sup, base] of [['disco','https://www.disco.com.uy'],['devoto','https://www.devoto.com.uy'],['tiendainglesa','https://www.tiendainglesa.com.uy']]) {
-              const prev = all.length;
               console.log(`🟡 ${sup}...`);
-              for (const term of TERMS) (await vtexSearch(base, term, sup)).forEach(add);
+              const cookie = await getCookies(base);
+              const prev = all.length;
+              for (const term of TERMS) (await vtexSearch(base, term, sup, cookie)).forEach(add);
               console.log(`✅ ${sup}: ${all.length - prev}`);
             }
 
