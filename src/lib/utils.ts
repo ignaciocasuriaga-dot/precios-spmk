@@ -1,6 +1,14 @@
 export const TARGET_BRANDS = [
-  'Los Sorchantes','Tia Rosa','Bimbo','Rapiditas','Artesano',
-  'Maestro Cubano','Merienda Hit','Takis','Salmas','Nutrabien',
+  'Los Sorchantes',
+  'Tia Rosa',
+  'Bimbo',
+  'Rapiditas',
+  'Artesano',
+  'Maestro Cubano',
+  'Merienda Hit',
+  'Takis',
+  'Salmas',
+  'Nutrabien',
 ] as const;
 
 export const SUPERMARKETS = ['Tienda Inglesa','Tata','Disco','El Dorado'] as const;
@@ -12,6 +20,7 @@ export const SUPERMARKET_COLORS: Record<string, string> = {
   'El Dorado':      'bg-yellow-100 text-yellow-800 border-yellow-200',
 };
 
+// Un término de búsqueda por marca — corto y preciso para que la API lo encuentre
 export const BRAND_SEARCH_TERMS: Record<string, string[]> = {
   'Los Sorchantes': ['sorchantes'],
   'Tia Rosa':       ['tia rosa'],
@@ -26,16 +35,29 @@ export const BRAND_SEARCH_TERMS: Record<string, string[]> = {
 };
 
 export function matchesBrand(text: string): string | null {
+  if (!text) return null;
   const lower = text.toLowerCase();
   for (const [brand, terms] of Object.entries(BRAND_SEARCH_TERMS)) {
-    if (terms.some(t => lower.includes(t))) return brand;
+    if (terms.some(t => lower.includes(t.toLowerCase()))) return brand;
   }
+  // Detección adicional por nombre de marca directa
+  if (lower.includes('sorchante')) return 'Los Sorchantes';
+  if (lower.includes('tia rosa') || lower.includes('tiarosa')) return 'Tia Rosa';
+  if (lower.includes('bimbo')) return 'Bimbo';
+  if (lower.includes('rapidita')) return 'Rapiditas';
+  if (lower.includes('artesano')) return 'Artesano';
+  if (lower.includes('maestro cubano') || lower.includes('maestrocubano')) return 'Maestro Cubano';
+  if (lower.includes('merienda hit') || lower.includes('meriendahit')) return 'Merienda Hit';
+  if (lower.includes('takis')) return 'Takis';
+  if (lower.includes('salmas')) return 'Salmas';
+  if (lower.includes('nutrabien') || lower.includes('nutra bien')) return 'Nutrabien';
   return null;
 }
 
-export function parsePrice(text: string): number | null {
+export function parsePrice(text: string | number): number | null {
+  if (typeof text === 'number') return isNaN(text) ? null : text;
   if (!text) return null;
-  const cleaned = text.replace(/[^\d,\.]/g, '').replace(',', '.');
+  const cleaned = String(text).replace(/[^\d,\.]/g, '').replace(',', '.');
   const num = parseFloat(cleaned);
   return isNaN(num) ? null : num;
 }
