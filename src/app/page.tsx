@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { Product, PriceHistoryEntry, Alert } from '@/types';
-import Navbar from '@/components/Navbar';
 import PriceTable from '@/components/PriceTable';
 import Comparador from '@/components/Comparador';
 import Ofertas from '@/components/Ofertas';
@@ -69,58 +68,163 @@ export default function Home() {
     await fetchData();
   }
 
-  const counts = { catalogo: products.length, comparador: 0, ofertas: products.filter(p => p.offerPrice).length, alertas: alerts.length };
+  const offerCount = products.filter(p => p.offerPrice).length;
+  const brandCount = new Set(products.map(p => p.brand)).size;
+  const superCount = new Set(products.map(p => p.supermarket)).size;
+  const avgPrice = products.length ? Math.round(products.reduce((a, p) => a + p.publishedPrice, 0) / products.length) : 0;
 
-  const tabContent = {
-    catalogo: <PriceTable products={products} onUpdatePVP={handleUpdatePVP} />,
+  const TABS = [
+    { id: 'catalogo',   label: 'Catalogo',   count: products.length },
+    { id: 'comparador', label: 'Comparador', count: null },
+    { id: 'ofertas',    label: 'Ofertas',    count: offerCount },
+    { id: 'alertas',    label: 'Alertas',    count: alerts.length },
+    { id: 'cobertura',  label: 'Cobertura',  count: null },
+    { id: 'historico',  label: 'Histórico',  count: null },
+  ];
+
+  const tabContent: Record<Tab, React.ReactNode> = {
+    catalogo:   <PriceTable products={products} onUpdatePVP={handleUpdatePVP} />,
     comparador: <Comparador products={products} />,
-    ofertas: <Ofertas products={products} />,
-    alertas: <Alertas alerts={alerts} />,
-    cobertura: <Cobertura products={products} />,
-    historico: <Historico history={history} />,
-    login: <Login onLogin={u => { setUser(u); setTab('catalogo'); }} />,
-    admin: user?.role === 'admin' ? <AdminPanel /> : <div className="text-center py-16 text-gray-400">Acceso restringido.</div>,
+    ofertas:    <Ofertas products={products} />,
+    alertas:    <Alertas alerts={alerts} />,
+    cobertura:  <Cobertura products={products} />,
+    historico:  <Historico history={history} />,
+    login:      <Login onLogin={u => { setUser(u); setTab('catalogo'); }} />,
+    admin:      user?.role === 'admin' ? <AdminPanel /> : <div className="text-center py-16 text-gray-400">Acceso restringido.</div>,
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar
-        user={user} onLogout={handleLogout} onScrape={handleScrape} scraping={scraping}
-        lastUpdate={lastUpdate} alertCount={alerts.length} activeTab={tab}
-        onTabChange={t => setTab(t as Tab)}
-      />
+    <div className="min-h-screen" style={{background:'#faf9f6'}}>
 
+      {/* HEADER */}
+      <header className="bg-white border-b-2 border-red-600 sticky top-0 z-50">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-black text-lg">P</span>
+            </div>
+            <div>
+              <div className="font-black text-gray-900 text-base leading-tight">PrecioUY</div>
+              <div className="text-xs text-gray-400 leading-tight">Monitor de Supermercados</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {lastUpdate && (
+              <div className="hidden md:block text-right">
+                <div className="text-xs text-gray-400 font-medium">Última actualización</div>
+                <div className="text-xs text-gray-600">
+                  {new Date(lastUpdate).toLocaleString('es-UY', { dateStyle: 'medium', timeStyle: 'short' })}
+                </div>
+              </div>
+            )}
+
+            {user ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleScrape}
+                  disabled={scraping}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all shadow-sm"
+                >
+                  <svg className={`w-4 h-4 ${scraping ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {scraping ? 'Actualizando...' : 'Actualizar precios'}
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center border border-gray-200">
+                    {user.name[0].toUpperCase()}
+                  </div>
+                  {user.role === 'admin' && (
+                    <button onClick={() => setTab('admin')} className="text-xs text-purple-600 hover:underline hidden sm:block">Admin</button>
+                  )}
+                  <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500">Salir</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setTab('login')}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all"
+              >
+                Iniciar sesión
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Mensaje scraping */}
       {scrapeMsg && (
-        <div className={`border-b px-4 py-2 text-xs font-medium ${scrapeMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-          <div className="max-w-screen-xl mx-auto">{scrapeMsg.text}</div>
+        <div className={`px-4 py-2 text-sm font-medium text-center ${scrapeMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-b border-green-100' : 'bg-red-50 text-red-700 border-b border-red-100'}`}>
+          {scrapeMsg.text}
         </div>
       )}
 
-      {/* Stats bar */}
-      <div className="bg-white border-b border-gray-100">
-        <div className="max-w-screen-xl mx-auto px-4 py-3 flex gap-6 overflow-x-auto">
-          {[
-            { label: 'Productos', value: products.length, icon: '📦' },
-            { label: 'Marcas', value: new Set(products.map(p => p.brand)).size, icon: '🏷️' },
-            { label: 'Supermercados', value: new Set(products.map(p => p.supermarket)).size, icon: '🏪' },
-            { label: 'Ofertas', value: products.filter(p => p.offerPrice).length, icon: '🏷️' },
-            { label: 'Alertas', value: alerts.length, icon: '🔔' },
-            { label: 'Historial', value: history.length, icon: '📈' },
-          ].map(({ label, value, icon }) => (
-            <div key={label} className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-base">{icon}</span>
-              <span className="text-xl font-bold text-gray-900">{value}</span>
-              <span className="text-xs text-gray-400">{label}</span>
-            </div>
+      {/* TABS */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 flex overflow-x-auto">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id as Tab)}
+              className={`flex items-center gap-2 px-4 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                tab === t.id
+                  ? 'border-red-600 text-red-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              {t.label}
+              {t.count !== null && t.count > 0 && (
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
+                  tab === t.id ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {t.count}
+                </span>
+              )}
+            </button>
           ))}
         </div>
       </div>
 
-      <main className="max-w-screen-xl mx-auto px-4 py-6">
+      {/* STAT CARDS */}
+      {tab !== 'login' && tab !== 'admin' && (
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Productos monitoreados</div>
+            <div className="text-3xl font-black text-gray-900">{products.length}</div>
+            {avgPrice > 0 && <div className="text-xs text-gray-400 mt-1">prom ${avgPrice.toLocaleString('es-UY')}</div>}
+          </div>
+          <div className="bg-white rounded-xl border-l-4 border-blue-500 border border-gray-200 p-4">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Marcas detectadas</div>
+            <div className="text-3xl font-black text-gray-900">{brandCount}</div>
+            <div className="text-xs text-gray-400 mt-1">{brandCount} configuradas</div>
+          </div>
+          <div className="bg-white rounded-xl border-l-4 border-orange-400 border border-gray-200 p-4">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Supers con productos</div>
+            <div className="text-3xl font-black text-gray-900">{superCount}/4</div>
+            <div className="text-xs text-gray-400 mt-1 truncate">
+              {[...new Set(products.map(p => p.supermarket))].join(', ') || '—'}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border-l-4 border-green-500 border border-gray-200 p-4">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ofertas activas</div>
+            <div className="text-3xl font-black text-gray-900">{offerCount}</div>
+            <div className="text-xs text-gray-400 mt-1">
+              {products.length > 0 ? `${Math.round((offerCount / products.length) * 100)}% del catálogo` : '—'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTENIDO */}
+      <main className="max-w-screen-xl mx-auto px-4 sm:px-6 pb-10">
         {loading ? (
           <div className="text-center py-20 text-gray-400">
-            <div className="text-4xl animate-spin mb-4">⟳</div>
-            <p className="text-sm">Cargando...</p>
+            <svg className="w-10 h-10 animate-spin mx-auto mb-4 text-red-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <p className="text-sm">Cargando datos...</p>
           </div>
         ) : tabContent[tab]}
       </main>
