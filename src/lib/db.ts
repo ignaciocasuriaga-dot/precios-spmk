@@ -1,5 +1,13 @@
 import { neon } from '@neondatabase/serverless';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 import { Product, PriceHistoryEntry, Alert, User } from '@/types';
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function isDbAvailable(): boolean {
+  return !!(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+}
 
 function getSQL() {
   const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
@@ -7,7 +15,93 @@ function getSQL() {
   return neon(url);
 }
 
+const DATA_FILE = join(process.cwd(), 'public', 'data', 'products.json');
+
+interface FileStore {
+  generatedAt: string;
+  items: Product[];
+  history: PriceHistoryEntry[];
+  alerts: Alert[];
+}
+
+function readStore(): FileStore {
+  try {
+    const raw = readFileSync(DATA_FILE, 'utf-8');
+    const data = JSON.parse(raw);
+    return {
+      generatedAt: data.generatedAt || new Date().toISOString(),
+      items: data.items || [],
+      history: data.history || [],
+      alerts: data.alerts || [],
+    };
+  } catch {
+    return { generatedAt: new Date().toISOString(), items: [], history: [], alerts: [] };
+  }
+}
+
+function writeStore(store: FileStore) {
+  try {
+    mkdirSync(dirname(DATA_FILE), { recursive: true });
+    writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
+  } catch (e) {
+    console.error('[FILESTORE] Error al escribir:', e);
+  }
+}
+
+// ── file-based upsert ─────────────────────────────────────────────────────────
+
+function upsertProductsToFile(products: Product[]): Alert[] {
+  const store = readStore();
+  const existingMap = new Map<string, Product>(store.items.map(p => [p.id, p]));
+  const newAlerts: Alert[] = [];
+
+  for (const p of products) {
+    const old = existingMap.get(p.id);
+    const oldPrice = old?.publishedPrice;
+    if (oldPrice && Math.abs(p.publishedPrice - oldPrice) / oldPrice > 0.005) {
+      const changePct = Math.round(((p.publishedPrice - oldPrice) / oldPrice) * 100);
+      newAlerts.push({
+        id: Date.now() + Math.random(),
+        productId: p.id,
+        productName: p.name,
+        supermarket: p.supermarket,
+        brand: p.brand,
+        oldPrice,
+        newPrice: p.publishedPrice,
+        changePercent: changePct,
+        type: p.publishedPrice > oldPrice ? 'increase' : 'decrease',
+        createdAt: new Date().toISOString(),
+      });
+    }
+    existingMap.set(p.id, p);
+  }
+
+  const newHistory: PriceHistoryEntry[] = [
+    ...products.map(p => ({
+      date: p.scrapedAt,
+      productId: p.id,
+      name: p.name,
+      brand: p.brand,
+      supermarket: p.supermarket,
+      price: p.publishedPrice,
+    })),
+    ...store.history,
+  ].slice(0, 1000);
+
+  writeStore({
+    generatedAt: new Date().toISOString(),
+    items: [...existingMap.values()],
+    history: newHistory,
+    alerts: [...newAlerts, ...store.alerts].slice(0, 200),
+  });
+
+  return newAlerts;
+}
+
+// ── DB schema init ────────────────────────────────────────────────────────────
+
 export async function initDB() {
+  if (!isDbAvailable()) return;
   const sql = getSQL();
   await sql`CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, brand TEXT NOT NULL, supermarket TEXT NOT NULL,
@@ -29,7 +123,12 @@ export async function initDB() {
     created_at TIMESTAMPTZ DEFAULT NOW())`;
 }
 
+// ── public API ─────────────────────────────────────────────────────────────────
+
 export async function upsertProducts(products: Product[]): Promise<Alert[]> {
+  if (!isDbAvailable()) {
+    return upsertProductsToFile(products);
+  }
   const sql = getSQL();
   await initDB();
   const newAlerts: Alert[] = [];
@@ -55,6 +154,9 @@ export async function upsertProducts(products: Product[]): Promise<Alert[]> {
 }
 
 export async function getAllProducts(): Promise<Product[]> {
+  if (!isDbAvailable()) {
+    return readStore().items;
+  }
   const sql = getSQL();
   await initDB();
   const rows = await sql`SELECT * FROM products ORDER BY brand, name, supermarket`;
@@ -62,11 +164,22 @@ export async function getAllProducts(): Promise<Product[]> {
 }
 
 export async function updatePVP(id: string, pvp: number) {
+  if (!isDbAvailable()) {
+    const store = readStore();
+    store.items = store.items.map(p =>
+      p.id === id ? { ...p, pvpSugerido: pvp, gapPercent: p.publishedPrice > 0 ? Math.round(((pvp - p.publishedPrice) / pvp) * 100) : null } : p
+    );
+    writeStore(store);
+    return;
+  }
   const sql = getSQL();
   await sql`UPDATE products SET pvp_sugerido=${pvp}, gap_percent=ROUND(((${pvp}-published_price)/${pvp})*100) WHERE id=${id}`;
 }
 
 export async function getHistory(limit = 500): Promise<PriceHistoryEntry[]> {
+  if (!isDbAvailable()) {
+    return readStore().history.slice(0, limit);
+  }
   const sql = getSQL();
   await initDB();
   const rows = await sql`SELECT * FROM price_history ORDER BY recorded_at DESC LIMIT ${limit}`;
@@ -74,6 +187,9 @@ export async function getHistory(limit = 500): Promise<PriceHistoryEntry[]> {
 }
 
 export async function getAlerts(limit = 100): Promise<Alert[]> {
+  if (!isDbAvailable()) {
+    return readStore().alerts.slice(0, limit);
+  }
   const sql = getSQL();
   await initDB();
   const rows = await sql`SELECT * FROM alerts ORDER BY created_at DESC LIMIT ${limit}`;
@@ -81,6 +197,7 @@ export async function getAlerts(limit = 100): Promise<Alert[]> {
 }
 
 export async function getUserByEmail(email: string): Promise<(User & { password_hash: string }) | null> {
+  if (!isDbAvailable()) return null;
   const sql = getSQL();
   await initDB();
   const rows = await sql`SELECT * FROM users WHERE email=${email}`;
@@ -88,12 +205,14 @@ export async function getUserByEmail(email: string): Promise<(User & { password_
 }
 
 export async function createUser(email: string, passwordHash: string, name: string, role = 'user') {
+  if (!isDbAvailable()) return;
   const sql = getSQL();
   await initDB();
   await sql`INSERT INTO users (email,password_hash,name,role) VALUES (${email},${passwordHash},${name},${role}) ON CONFLICT (email) DO NOTHING`;
 }
 
 export async function getAllUsers(): Promise<User[]> {
+  if (!isDbAvailable()) return [];
   const sql = getSQL();
   await initDB();
   const rows = await sql`SELECT id,email,name,role,created_at FROM users ORDER BY created_at DESC`;

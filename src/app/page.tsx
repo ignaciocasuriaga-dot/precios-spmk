@@ -7,11 +7,12 @@ import Ofertas from '@/components/Ofertas';
 import Alertas from '@/components/Alertas';
 import Cobertura from '@/components/Cobertura';
 import Historico from '@/components/Historico';
+import BimboAnalysis from '@/components/BimboAnalysis';
 
-type Tab = 'catalogo'|'comparador'|'ofertas'|'alertas'|'cobertura'|'historico';
+type Tab = 'bimbo'|'catalogo'|'comparador'|'ofertas'|'alertas'|'cobertura'|'historico';
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>('catalogo');
+  const [tab, setTab] = useState<Tab>('bimbo');
   const [products, setProducts] = useState<Product[]>([]);
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -66,15 +67,17 @@ export default function Home() {
   const avgPrice = products.length ? Math.round(products.reduce((a, p) => a + p.publishedPrice, 0) / products.length) : 0;
 
   const TABS = [
-    { id: 'catalogo',   label: 'Catalogo',   count: products.length },
-    { id: 'comparador', label: 'Comparador', count: null },
-    { id: 'ofertas',    label: 'Ofertas',    count: offerCount },
-    { id: 'alertas',    label: 'Alertas',    count: alerts.length },
-    { id: 'cobertura',  label: 'Cobertura',  count: null },
-    { id: 'historico',  label: 'Histórico',  count: null },
+    { id: 'bimbo',      label: 'Bimbo vs Comp.', count: null },
+    { id: 'catalogo',   label: 'Catálogo',       count: products.length },
+    { id: 'comparador', label: 'Comparador',     count: null },
+    { id: 'ofertas',    label: 'Ofertas',        count: offerCount },
+    { id: 'alertas',    label: 'Alertas',        count: alerts.length },
+    { id: 'cobertura',  label: 'Cobertura',      count: null },
+    { id: 'historico',  label: 'Histórico',      count: null },
   ];
 
   const tabContent: Record<Tab, React.ReactNode> = {
+    bimbo:      <BimboAnalysis products={products} />,
     catalogo:   <PriceTable products={products} onUpdatePVP={handleUpdatePVP} />,
     comparador: <Comparador products={products} />,
     ofertas:    <Ofertas products={products} />,

@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '0 9 * * *'
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -20,7 +23,7 @@ jobs:
       - name: Correr scrapers
         run: |
           cat > /tmp/scraper.mjs << 'EOF'
-          import { writeFileSync, mkdirSync } from 'fs';
+          import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 
           const BRAND_TERMS = {
             'Bimbo': ['bimbo'], 'Artesano': ['artesano'],
@@ -29,6 +32,12 @@ jobs:
             'Nutrabien': ['nutrabien'], 'Salmas': ['salmas'],
             'Merienda Hit': ['merienda hit'], 'Takis': ['takis'],
           };
+
+          const SUPER_NAMES = {
+            tata: 'Tata', disco: 'Disco', devoto: 'Devoto',
+            tiendainglesa: 'Tienda Inglesa', eldorado: 'El Dorado',
+          };
+
           function matchesBrand(name) {
             const lower = (name || '').toLowerCase();
             for (const [brand, terms] of Object.entries(BRAND_TERMS))
@@ -36,30 +45,49 @@ jobs:
             return null;
           }
 
-          const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Accept-Language': 'es-UY,es;q=0.9' };
+          function generateId(name, supermarket) {
+            return (supermarket + '-' + name).toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,100);
+          }
+
+          function toProduct(raw, timestamp) {
+            const supermarket = SUPER_NAMES[raw.sup] || raw.sup;
+            const publishedPrice = Number(raw.price) || 0;
+            const listPrice = raw.listPrice ? Number(raw.listPrice) : null;
+            const regularPrice = (listPrice && listPrice > publishedPrice) ? listPrice : null;
+            const offerPrice = regularPrice ? publishedPrice : null;
+            const discount = regularPrice ? Math.round(((regularPrice - publishedPrice) / regularPrice) * 100) : null;
+            return {
+              id: generateId(raw.name, supermarket.toLowerCase().replace(/ /g,'')),
+              name: raw.name, brand: raw.brand, supermarket,
+              publishedPrice, regularPrice, offerPrice, discount,
+              pvpSugerido: null, gapPercent: null,
+              url: raw.url || '',
+              imageUrl: raw.imageUrl || '',
+              scrapedAt: timestamp,
+            };
+          }
+
+          const HEADERS = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'es-UY,es;q=0.9',
+          };
 
           async function getCookies(base) {
             try {
-              const r = await fetch(base, { headers: { ...HEADERS, 'Accept': 'text/html' }, signal: AbortSignal.timeout(15000), redirect: 'follow' });
+              const r = await fetch(base, { headers: { ...HEADERS, Accept: 'text/html' }, signal: AbortSignal.timeout(15000), redirect: 'follow' });
               const raw = r.headers.getSetCookie?.() || [];
-              const cookie = raw.map(c => c.split(';')[0]).join('; ');
-              console.log(`  cookies ${base}: ${cookie.slice(0,80)}...`);
-              return cookie;
-            } catch(e) { console.log(`  sin cookies ${base}: ${e.message}`); return ''; }
+              return raw.map(c => c.split(';')[0]).join('; ');
+            } catch { return ''; }
           }
-
-          const TATA_SKUS = ['823','138617','117854','152701','86737','152700','117853','117856','822','3776','169382','3765','3764','14577','3775','820','821','7776','3757','3759','832','828','136772','136769','136770','136768','86738','3735','86717','136863','18253','747','746','743','744','745','3685','3686','3689','86792','149195','149198','149193','149194','806','805','157041','86711','169928','169942','86714','148195'];
-          const TERMS = ['bimbo','sorchantes','rapiditas','maestro cubano','nutrabien','tia rosa','salmas','artesano'];
 
           async function vtexSku(base, sku, sup, cookie) {
             try {
               const r = await fetch(`${base}/api/catalog_system/pub/products/search?fq=skuId:${sku}`, {
-                headers: { ...HEADERS, ...(cookie ? { 'Cookie': cookie } : {}) },
+                headers: { ...HEADERS, ...(cookie ? { Cookie: cookie } : {}) },
                 signal: AbortSignal.timeout(10000),
               });
-              if (!r.ok) return null;
-              const ct = r.headers.get('content-type') || '';
-              if (!ct.includes('json')) return null;
+              if (!r.ok || !r.headers.get('content-type')?.includes('json')) return null;
               const d = await r.json().catch(() => []);
               if (!Array.isArray(d) || !d[0]) return null;
               const item = d[0];
@@ -68,19 +96,17 @@ jobs:
               const offer = item.items?.[0]?.sellers?.[0]?.commertialOffer;
               const price = Number(offer?.Price || 0);
               if (!price) return null;
-              return { super: sup, sku, name: item.productName, brand, price, listPrice: offer.ListPrice || null, currency: 'UYU', url: `${base}${item.link || ''}`, imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '' };
+              return { sup, sku, name: item.productName, brand, price, listPrice: offer.ListPrice || null, url: `${base}${item.link || ''}`, imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '' };
             } catch { return null; }
           }
 
           async function vtexSearch(base, term, sup, cookie) {
             try {
               const r = await fetch(`${base}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=49`, {
-                headers: { ...HEADERS, ...(cookie ? { 'Cookie': cookie } : {}) },
+                headers: { ...HEADERS, ...(cookie ? { Cookie: cookie } : {}) },
                 signal: AbortSignal.timeout(10000),
               });
-              if (!r.ok) { console.log(`  ${sup} ft=${term} → ${r.status}`); return []; }
-              const ct = r.headers.get('content-type') || '';
-              if (!ct.includes('json')) { console.log(`  ${sup} ft=${term} → no JSON (${ct})`); return []; }
+              if (!r.ok || !r.headers.get('content-type')?.includes('json')) return [];
               const d = await r.json().catch(() => []);
               if (!Array.isArray(d)) return [];
               console.log(`  ${sup} ft=${term} → ${d.length} items`);
@@ -90,35 +116,96 @@ jobs:
                 const offer = item.items?.[0]?.sellers?.[0]?.commertialOffer;
                 const price = Number(offer?.Price || 0);
                 if (!price) return null;
-                return { super: sup, sku: item.items?.[0]?.itemId, name: item.productName, brand, price, listPrice: offer.ListPrice || null, currency: 'UYU', url: `${base}${item.link || ''}`, imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '' };
+                return { sup, sku: item.items?.[0]?.itemId, name: item.productName, brand, price, listPrice: offer.ListPrice || null, url: `${base}${item.link || ''}`, imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '' };
               }).filter(Boolean);
             } catch(e) { console.log(`  ${sup} ft=${term} error: ${e.message}`); return []; }
           }
 
+          const TATA_SKUS = ['823','138617','117854','152701','86737','152700','117853','117856','822','3776','169382','3765','3764','14577','3775','820','821','7776','3757','3759','832','828','136772','136769','136770','136768','86738','3735','86717','136863','18253','747','746','743','744','745','3685','3686','3689','86792','149195','149198','149193','149194','806','805','157041','86711','169928','169942','86714','148195'];
+          const TERMS = ['bimbo','sorchantes','rapiditas','maestro cubano','nutrabien','tia rosa','salmas','artesano','merienda hit','takis'];
+
           async function main() {
-            const all = [], seen = new Set();
-            function add(p) { if (p && !seen.has(`${p.super}-${p.sku}`)) { seen.add(`${p.super}-${p.sku}`); all.push(p); } }
+            const timestamp = new Date().toISOString();
+            const rawAll = [], seen = new Set();
+            function add(p) { if (p && p.price > 0 && !seen.has(`${p.sup}-${p.name}`)) { seen.add(`${p.sup}-${p.name}`); rawAll.push(p); } }
 
-            // Tata
-            console.log('🟡 Tata...');
-            const tataCookie = await getCookies('https://www.tata.com.uy');
-            (await Promise.all(TATA_SKUS.map(s => vtexSku('https://www.tata.com.uy', s, 'tata', tataCookie)))).forEach(add);
-            for (const term of TERMS) (await vtexSearch('https://www.tata.com.uy', term, 'tata', tataCookie)).forEach(add);
-            console.log(`✅ Tata: ${all.filter(p=>p.super==='tata').length}`);
+            const STORES = [
+              ['tata', 'https://www.tata.com.uy', true],
+              ['disco', 'https://www.disco.com.uy', false],
+              ['devoto', 'https://www.devoto.com.uy', false],
+              ['tiendainglesa', 'https://www.tiendainglesa.com.uy', false],
+              ['eldorado', 'https://www.eldorado.com.uy', false],
+            ];
 
-            // Disco + Devoto + Tienda Inglesa
-            for (const [sup, base] of [['disco','https://www.disco.com.uy'],['devoto','https://www.devoto.com.uy'],['tiendainglesa','https://www.tiendainglesa.com.uy']]) {
-              console.log(`🟡 ${sup}...`);
+            for (const [sup, base, doSkus] of STORES) {
+              console.log(`\n🟡 ${sup}...`);
               const cookie = await getCookies(base);
-              const prev = all.length;
-              for (const term of TERMS) (await vtexSearch(base, term, sup, cookie)).forEach(add);
-              console.log(`✅ ${sup}: ${all.length - prev}`);
+              if (doSkus) {
+                const bySkus = await Promise.all(TATA_SKUS.map(s => vtexSku(base, s, sup, cookie)));
+                bySkus.forEach(add);
+              }
+              for (const term of TERMS) {
+                const results = await vtexSearch(base, term, sup, cookie);
+                results.forEach(add);
+                await new Promise(r => setTimeout(r, 500));
+              }
+              console.log(`✅ ${sup}: ${rawAll.filter(p=>p.sup===sup).length}`);
+            }
+
+            // Read existing data to preserve pvpSugerido values
+            let existingById = {};
+            try {
+              const raw = readFileSync('public/data/products.json', 'utf-8');
+              const existing = JSON.parse(raw);
+              if (existing.items) {
+                for (const item of existing.items) existingById[item.id] = item;
+              }
+            } catch {}
+
+            // Convert to Product format and merge pvp values
+            const products = rawAll.map(raw => {
+              const prod = toProduct(raw, timestamp);
+              const prev = existingById[prod.id];
+              if (prev?.pvpSugerido) {
+                prod.pvpSugerido = prev.pvpSugerido;
+                prod.gapPercent = prev.gapPercent;
+              }
+              return prod;
+            });
+
+            // Preserve items from existing data that aren't in new scrape (keep history)
+            const newIds = new Set(products.map(p => p.id));
+            const preserved = Object.values(existingById).filter(p => !newIds.has(p.id));
+
+            // Detect price changes and generate alerts
+            const alerts = [];
+            for (const prod of products) {
+              const prev = existingById[prod.id];
+              if (prev && Math.abs(prod.publishedPrice - prev.publishedPrice) / prev.publishedPrice > 0.005) {
+                const changePct = Math.round(((prod.publishedPrice - prev.publishedPrice) / prev.publishedPrice) * 100);
+                alerts.push({
+                  id: Date.now() + Math.random(),
+                  productId: prod.id, productName: prod.name,
+                  supermarket: prod.supermarket, brand: prod.brand,
+                  oldPrice: prev.publishedPrice, newPrice: prod.publishedPrice,
+                  changePercent: changePct,
+                  type: prod.publishedPrice > prev.publishedPrice ? 'increase' : 'decrease',
+                  createdAt: timestamp,
+                });
+              }
             }
 
             mkdirSync('public/data', { recursive: true });
-            writeFileSync('public/data/products.json', JSON.stringify({ generatedAt: new Date().toISOString(), items: all }, null, 2));
-            console.log(`💾 Total: ${all.length} productos`);
+            const store = {
+              generatedAt: timestamp,
+              items: products,
+              history: products.map(p => ({ date: p.scrapedAt, productId: p.id, name: p.name, brand: p.brand, supermarket: p.supermarket, price: p.publishedPrice })),
+              alerts,
+            };
+            writeFileSync('public/data/products.json', JSON.stringify(store, null, 2));
+            console.log(`\n💾 Total: ${products.length} productos, ${alerts.length} alertas`);
           }
+
           main().catch(e => { console.error(e); process.exit(1); });
           EOF
           node /tmp/scraper.mjs

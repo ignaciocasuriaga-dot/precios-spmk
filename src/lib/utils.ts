@@ -11,6 +11,35 @@ export const TARGET_BRANDS = [
   'Nutrabien',
 ] as const;
 
+export type BreadCategory = 'Pan de Molde' | 'Pan de Tortuga' | 'Pan de Viena' | 'Otro';
+export const BREAD_CATEGORIES: BreadCategory[] = ['Pan de Molde', 'Pan de Tortuga', 'Pan de Viena'];
+
+// Brands that belong to Grupo Bimbo (as tracked in this app)
+export const BIMBO_OWN_BRANDS = new Set(['Bimbo', 'Artesano', 'Nutrabien', 'Tia Rosa']);
+
+export function detectCategory(name: string, brand?: string): BreadCategory {
+  const n = (name + ' ' + (brand || '')).toLowerCase();
+  if (n.includes('tortuga') || n.includes('hamburguesa') || n.includes('hot dog') ||
+      n.includes('hotdog') || n.includes('perrito'))
+    return 'Pan de Tortuga';
+  if (n.includes('viena') || n.includes('vienés') || n.includes('vienes') ||
+      n.includes('frances') || n.includes('francés') || n.includes('baguette') ||
+      n.includes('sorchante') || n.includes('cubano') || n.includes('criollito'))
+    return 'Pan de Viena';
+  if (n.includes('lactal') || n.includes('molde') || n.includes('sandwich') ||
+      n.includes('integral') || n.includes('blanco') || n.includes('artesano') ||
+      n.includes('nutrabien') || n.includes('brioche') || n.includes('tia rosa') || n.includes('tiarosa'))
+    return 'Pan de Molde';
+  if (n.includes('rapidita') || n.includes('salma') || n.includes('takis') ||
+      n.includes('merienda hit') || n.includes('meriendahit'))
+    return 'Otro';
+  if (brand === 'Bimbo' || brand === 'Artesano' || brand === 'Nutrabien' || brand === 'Tia Rosa')
+    return 'Pan de Molde';
+  if (brand === 'Los Sorchantes' || brand === 'Maestro Cubano')
+    return 'Pan de Viena';
+  return 'Otro';
+}
+
 export const SUPERMARKETS = ['Tienda Inglesa','Tata','Disco','El Dorado'] as const;
 
 export const SUPERMARKET_COLORS: Record<string, string> = {
