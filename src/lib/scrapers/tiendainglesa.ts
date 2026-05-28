@@ -7,38 +7,109 @@ export async function scrapeTiendaInglesa(): Promise<Product[]> {
   const seen = new Set<string>();
   const BASE = 'https://www.tiendainglesa.com.uy';
 
-  for (const terms of Object.values(BRAND_SEARCH_TERMS)) {
-    const term = terms[0];
-    try {
-      const res = await fetch(`${BASE}/search?q=${encodeURIComponent(term)}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PrecioUY/1.0)', 'Accept': 'text/html' },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) continue;
-      const html = await res.text();
+  for (const [brand, terms] of Object.entries(BRAND_SEARCH_TERMS)) {
+    for (const term of terms) {
+      try {
+        // Tienda Inglesa usa VTEX - intentar API primero
+        const apiUrl = `${BASE}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=29`;
+        const res = await fetch(apiUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(20000),
+        });
 
-      const blocks = [...html.matchAll(/<(?:div|article|li)[^>]*class="[^"]*product[^"]*"[^>]*>([\s\S]*?)(?=<(?:div|article|li)[^>]*class="[^"]*product|\s*<\/(?:ul|section|main|div class="shelf))/gi)];
-      for (const [, block] of blocks) {
-        const nameM = block.match(/class="[^"]*(?:title|name)[^"]*"[^>]*>([^<]{4,80})</i) || block.match(/<h[1-4][^>]*>([^<]{4,80})<\/h/i);
-        const priceM = block.match(/\$\s*([\d\.]{2,})/);
-        if (!nameM || !priceM) continue;
-        const name = nameM[1].trim();
-        const brand = matchesBrand(name);
-        if (!brand) continue;
-        const publishedPrice = parsePrice(priceM[1]);
-        if (!publishedPrice || publishedPrice < 10) continue;
-        const oldM = block.match(/(?:tachado|lined|old|regular|antes)[^>]*>\$?\s*([\d\.]+)/i);
-        const regularPrice = oldM ? parsePrice(oldM[1]) : null;
-        const offerPrice = regularPrice && regularPrice > publishedPrice ? publishedPrice : null;
-        const hrefM = block.match(/href="([^"]+)"/);
-        const imgM = block.match(/src="([^"]+\.(?:jpg|png|webp)[^"]*)"/i);
-        const id = generateId(name, 'tienda-inglesa');
-        if (seen.has(id)) continue;
-        seen.add(id);
-        products.push({ id, name, brand, supermarket: 'Tienda Inglesa', publishedPrice, regularPrice, offerPrice, discount: calcDiscount(regularPrice, offerPrice), pvpSugerido: null, gapPercent: null, url: hrefM ? (hrefM[1].startsWith('http') ? hrefM[1] : `${BASE}${hrefM[1]}`) : `${BASE}/search?q=${encodeURIComponent(term)}`, imageUrl: imgM?.[1] || '', scrapedAt: timestamp });
+        if (res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('json')) {
+            const data = await res.json().catch(() => []);
+            if (Array.isArray(data) && data.length > 0) {
+              for (const item of data) {
+                const name = item.productName || item.name || '';
+                const detectedBrand = matchesBrand(name);
+                if (!detectedBrand) continue;
+                const sellers = item.items?.[0]?.sellers;
+                if (!sellers?.length) continue;
+                const offer = sellers[0]?.commertialOffer;
+                if (!offer) continue;
+                const publishedPrice = Number(offer.Price || offer.spotPrice || 0);
+                if (!publishedPrice || publishedPrice < 5) continue;
+                const regularPrice = offer.ListPrice && Number(offer.ListPrice) > publishedPrice ? Number(offer.ListPrice) : null;
+                const offerPrice = regularPrice ? publishedPrice : null;
+                const id = generateId(name, 'tienda-inglesa');
+                if (seen.has(id)) continue;
+                seen.add(id);
+                products.push({
+                  id, name, brand: detectedBrand, supermarket: 'Tienda Inglesa',
+                  publishedPrice, regularPrice, offerPrice,
+                  discount: calcDiscount(regularPrice, offerPrice),
+                  pvpSugerido: null, gapPercent: null,
+                  url: `${BASE}/${item.linkText}/p`,
+                  imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '',
+                  scrapedAt: timestamp,
+                });
+              }
+              await new Promise(r => setTimeout(r, 1000));
+              continue;
+            }
+          }
+        }
+
+        // Fallback: buscar por HTML
+        const searchUrl = `${BASE}/buscapagina?ft=${encodeURIComponent(term)}&PS=20&sl=&cc=&sm=0&PageNumber=0`;
+        const htmlRes = await fetch(searchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+          },
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!htmlRes.ok) continue;
+        const html = await htmlRes.text();
+        extractFromHTML(html, 'Tienda Inglesa', BASE, timestamp, seen, products);
+        await new Promise(r => setTimeout(r, 1000));
+      } catch (e) {
+        console.error(`[TI] Error "${term}":`, e);
       }
-      await new Promise(r => setTimeout(r, 1200));
-    } catch (e) { console.error('[TI]', term, e); }
+    }
   }
   return products;
+}
+
+function extractFromHTML(html: string, supermarket: string, base: string, timestamp: string, seen: Set<string>, products: Product[]) {
+  // Buscar JSON embebido en la página (VTEX)
+  const jsonMatches = html.match(/vtex\.events\.addData\((\{[\s\S]*?\})\)/g) || [];
+  for (const match of jsonMatches) {
+    try {
+      const json = JSON.parse(match.replace("vtex.events.addData(", "").slice(0, -1));
+      if (json.productId && json.productName) {
+        const name = json.productName;
+        const brand = matchesBrand(name);
+        if (!brand) continue;
+        const price = json.productPriceTo || json.productPrice;
+        if (!price) continue;
+        const publishedPrice = Number(price);
+        const id = generateId(name, supermarket.toLowerCase().replace(/\s/g, '-'));
+        if (seen.has(id)) continue;
+        seen.add(id);
+        products.push({ id, name, brand, supermarket, publishedPrice, regularPrice: null, offerPrice: null, discount: null, pvpSugerido: null, gapPercent: null, url: `${base}/${json.productLinkText || ''}/p`, imageUrl: '', scrapedAt: timestamp });
+      }
+    } catch {}
+  }
+
+  // Buscar bloques de producto en HTML crudo
+  const nameRe = /<[^>]*class="[^"]*(?:product[-_]?name|productName|shelf-product-name)[^"]*"[^>]*>([^<]{3,100})</gi;
+  const priceRe = /<[^>]*class="[^"]*(?:best[-_]?price|salesprice|price-best)[^"]*"[^>]*>[\s\S]{0,50}?\$\s*([\d\.,]+)/gi;
+  const names = [...html.matchAll(nameRe)].map(m => m[1].trim());
+  const prices = [...html.matchAll(priceRe)].map(m => parsePrice(m[1]));
+  for (let i = 0; i < Math.min(names.length, prices.length); i++) {
+    const name = names[i];
+    const brand = matchesBrand(name);
+    if (!brand || !prices[i]) continue;
+    const id = generateId(name, supermarket.toLowerCase().replace(/\s/g, '-'));
+    if (seen.has(id)) continue;
+    seen.add(id);
+    products.push({ id, name, brand, supermarket, publishedPrice: prices[i]!, regularPrice: null, offerPrice: null, discount: null, pvpSugerido: null, gapPercent: null, url: base, imageUrl: '', scrapedAt: timestamp });
+  }
 }
