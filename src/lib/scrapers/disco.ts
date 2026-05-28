@@ -1,98 +1,122 @@
 import { Product } from '@/types';
-import { matchesBrand, parsePrice, calcDiscount, generateId, BRAND_SEARCH_TERMS } from '../utils';
+import { matchesBrand, calcDiscount, generateId } from '../utils';
+
+// SKUs conocidos de Disco (mismo SKU que Devoto, misma plataforma)
+const KNOWN_SKUS = [
+  // Artesano
+  '660290','660362','661630','663951','661650','661650',
+  // Bimbo
+  '661652','601904','602534','661651','602554','602546','602555','201932','601811','602694','660635','660637',
+  // Los Sorchantes
+  '602318','601711','602383','602385','346268','346269','346270','346271',
+  // Maestro Cubano
+  '665270','665264','665055','665271','665168','661557','661559','661561','744985','744177','744997',
+  // Nutrabien
+  '662895','662894','601416','601427','601429','601433','602053',
+  // Rapiditas
+  '664153','664154','373987','345155',
+  // Tia Rosa
+  '981159','981158','573956',
+  // Salmas
+  '664235','664234','602183',
+  // Vital
+  '201109','661373',
+];
 
 export async function scrapeDisco(): Promise<Product[]> {
   const products: Product[] = [];
   const timestamp = new Date().toISOString();
-  const seen = new Set<string>();
   const BASE = 'https://www.disco.com.uy';
 
-  for (const terms of Object.values(BRAND_SEARCH_TERMS)) {
-    const term = terms[0];
+  // Método 1: API VTEX búsqueda
+  const searchTerms = ['bimbo','sorchantes','rapiditas','maestro cubano','nutrabien','tia rosa','salmas','takis','merienda'];
+  
+  for (const term of searchTerms) {
     try {
-      // Disco VTEX - búsqueda fulltext
-      const url = `${BASE}/buscapagina?ft=${encodeURIComponent(term)}&PS=20&sl=&cc=&sm=0&PageNumber=0`;
+      const url = `${BASE}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=49`;
       const res = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml',
+          'Accept': 'application/json, text/plain, */*',
           'Accept-Language': 'es-UY,es;q=0.9',
           'Referer': `${BASE}/`,
+          'Origin': BASE,
         },
         signal: AbortSignal.timeout(20000),
       });
-      if (!res.ok) {
-        // Intentar API VTEX directa
-        const api = `${BASE}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=29`;
-        const res2 = await fetch(api, {
-          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(20000),
-        });
-        if (res2.ok) {
-          const data = await res2.json().catch(() => []);
-          processVTEXJson(data, 'Disco', BASE, timestamp, seen, products);
+
+      if (res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('json')) {
+          const data = await res.json().catch(() => []);
+          if (Array.isArray(data)) {
+            for (const item of data) {
+              const name = item.productName || item.name || '';
+              const brand = matchesBrand(name);
+              if (!brand) continue;
+              const sellers = item.items?.[0]?.sellers;
+              if (!sellers?.length) continue;
+              const offer = sellers[0]?.commertialOffer;
+              if (!offer) continue;
+              const publishedPrice = Number(offer.Price || 0);
+              if (!publishedPrice || publishedPrice < 5) continue;
+              const regularPrice = offer.ListPrice && Number(offer.ListPrice) > publishedPrice ? Number(offer.ListPrice) : null;
+              const offerPrice = regularPrice ? publishedPrice : null;
+              const id = generateId(name, 'disco');
+              if (products.some(p => p.id === id)) continue;
+              products.push({
+                id, name, brand, supermarket: 'Disco',
+                publishedPrice, regularPrice, offerPrice,
+                discount: calcDiscount(regularPrice, offerPrice),
+                pvpSugerido: null, gapPercent: null,
+                url: item.link || `${BASE}/${item.linkText}/p`,
+                imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '',
+                scrapedAt: timestamp,
+              });
+            }
+          }
         }
-        await new Promise(r => setTimeout(r, 1500));
-        continue;
       }
-      const html = await res.text();
-
-      // Buscar JSON embebido VTEX
-      const skuMatch = html.match(/var\s+skuJson_\d+\s*=\s*(\{[\s\S]*?\});/g) || [];
-      for (const raw of skuMatch) {
-        try {
-          const json = JSON.parse(raw.replace(/var\s+skuJson_\d+\s*=\s*/, '').replace(/;$/, ''));
-          const name = json.name || '';
-          const brand = matchesBrand(name);
-          if (!brand) continue;
-          const price = json.skus?.[0]?.bestPrice / 100;
-          const listPrice = json.skus?.[0]?.listPrice / 100;
-          if (!price || price < 5) continue;
-          const regularPrice = listPrice && listPrice > price ? listPrice : null;
-          const offerPrice = regularPrice ? price : null;
-          const id = generateId(name, 'disco');
-          if (seen.has(id)) continue;
-          seen.add(id);
-          products.push({ id, name, brand, supermarket: 'Disco', publishedPrice: price, regularPrice, offerPrice, discount: calcDiscount(regularPrice, offerPrice), pvpSugerido: null, gapPercent: null, url: `${BASE}${json.link || ''}`, imageUrl: json.skus?.[0]?.image || '', scrapedAt: timestamp });
-        } catch {}
-      }
-
-      // HTML fallback
-      const nameRe = /<[^>]*class="[^"]*(?:product-name|productName|shelf-product-name)[^"]*"[^>]*>\s*(?:<a[^>]*>)?([^<]{4,100})/gi;
-      const priceRe = /<[^>]*class="[^"]*(?:bestPrice|best-price)[^"]*"[^>]*>[\s\S]{0,20}?\$?\s*([\d\.]+)/gi;
-      const names = [...html.matchAll(nameRe)].map(m => m[1].trim());
-      const prices = [...html.matchAll(priceRe)].map(m => parsePrice(m[1]));
-      for (let i = 0; i < Math.min(names.length, prices.length); i++) {
-        const name = names[i];
-        const brand = matchesBrand(name);
-        if (!brand || !prices[i] || prices[i]! < 5) continue;
-        const id = generateId(name, 'disco');
-        if (seen.has(id)) continue;
-        seen.add(id);
-        products.push({ id, name, brand, supermarket: 'Disco', publishedPrice: prices[i]!, regularPrice: null, offerPrice: null, discount: null, pvpSugerido: null, gapPercent: null, url: BASE, imageUrl: '', scrapedAt: timestamp });
-      }
-
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 1000));
     } catch (e) { console.error(`[DISCO] "${term}":`, e); }
   }
-  return products;
-}
 
-function processVTEXJson(data: any[], supermarket: string, base: string, timestamp: string, seen: Set<string>, products: Product[]) {
-  if (!Array.isArray(data)) return;
-  for (const item of data) {
-    const name = item.productName || '';
-    const brand = matchesBrand(name);
-    if (!brand) continue;
-    const offer = item.items?.[0]?.sellers?.[0]?.commertialOffer;
-    const price = Number(offer?.Price || 0);
-    if (!price || price < 5) continue;
-    const listPrice = Number(offer?.ListPrice || 0);
-    const regularPrice = listPrice > price ? listPrice : null;
-    const offerPrice = regularPrice ? price : null;
-    const id = generateId(name, supermarket.toLowerCase().replace(/\s/g, '-'));
-    if (seen.has(id)) continue;
-    seen.add(id);
-    products.push({ id, name, brand, supermarket, publishedPrice: price, regularPrice, offerPrice, discount: calcDiscount(regularPrice, offerPrice), pvpSugerido: null, gapPercent: null, url: `${base}/${item.linkText}/p`, imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '', scrapedAt: timestamp });
+  // Método 2: SKUs conocidos como fallback
+  if (products.length === 0) {
+    for (const sku of KNOWN_SKUS) {
+      try {
+        const url = `${BASE}/api/catalog_system/pub/products/search?fq=skuId:${sku}`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Referer': BASE },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) continue;
+        const data = await res.json().catch(() => []);
+        if (!Array.isArray(data) || !data[0]) continue;
+        const item = data[0];
+        const name = item.productName || '';
+        const brand = matchesBrand(name);
+        if (!brand) continue;
+        const offer = item.items?.[0]?.sellers?.[0]?.commertialOffer;
+        const price = Number(offer?.Price || 0);
+        const listPrice = Number(offer?.ListPrice || 0);
+        if (!price) continue;
+        const regularPrice = listPrice > price ? listPrice : null;
+        const id = generateId(name, 'disco');
+        if (products.some(p => p.id === id)) continue;
+        products.push({
+          id, name, brand, supermarket: 'Disco',
+          publishedPrice: price, regularPrice, offerPrice: regularPrice ? price : null,
+          discount: calcDiscount(regularPrice, regularPrice ? price : null),
+          pvpSugerido: null, gapPercent: null,
+          url: `${BASE}/product/${item.linkText}/${sku}`,
+          imageUrl: item.items?.[0]?.images?.[0]?.imageUrl || '',
+          scrapedAt: timestamp,
+        });
+        await new Promise(r => setTimeout(r, 300));
+      } catch {}
+    }
   }
+
+  return products;
 }
