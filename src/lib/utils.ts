@@ -1,21 +1,20 @@
 export const TARGET_BRANDS = [
-  'Los Sorchantes',
-  'Tia Rosa',
-  'Bimbo',
-  'Rapiditas',
-  'Artesano',
-  'Maestro Cubano',
-  'Merienda Hit',
-  'Takis',
-  'Salmas',
-  'Nutrabien',
+  // Grupo Bimbo
+  'Bimbo', 'Los Sorchantes', 'Artesano', 'Tia Rosa', 'Nutrabien',
+  'Rapiditas', 'Salmas', 'Merienda Hit', 'Takis',
+  // Competencia pan
+  'Bauducco', 'Fargo', 'Magnific', 'Maestro Cubano',
+  'Marca Propia', 'Precio Líder',
 ] as const;
 
 export type BreadCategory = 'Pan de Molde' | 'Pan de Tortuga' | 'Pan de Viena' | 'Otro';
 export const BREAD_CATEGORIES: BreadCategory[] = ['Pan de Molde', 'Pan de Tortuga', 'Pan de Viena'];
 
-// Brands that belong to Grupo Bimbo (as tracked in this app)
-export const BIMBO_OWN_BRANDS = new Set(['Bimbo', 'Artesano', 'Nutrabien', 'Tia Rosa']);
+// Todas las marcas del Grupo Bimbo monitoreadas
+export const BIMBO_OWN_BRANDS = new Set([
+  'Bimbo', 'Los Sorchantes', 'Artesano', 'Tia Rosa',
+  'Nutrabien', 'Rapiditas', 'Salmas', 'Merienda Hit', 'Takis',
+]);
 
 export function detectCategory(name: string, brand?: string): BreadCategory {
   const n = (name + ' ' + (brand || '')).toLowerCase();
@@ -24,19 +23,26 @@ export function detectCategory(name: string, brand?: string): BreadCategory {
     return 'Pan de Tortuga';
   if (n.includes('viena') || n.includes('vienés') || n.includes('vienes') ||
       n.includes('frances') || n.includes('francés') || n.includes('baguette') ||
-      n.includes('sorchante') || n.includes('cubano') || n.includes('criollito'))
+      n.includes('sorchante') || n.includes('cubano') || n.includes('criollito') ||
+      n.includes('pan franc'))
     return 'Pan de Viena';
   if (n.includes('lactal') || n.includes('molde') || n.includes('sandwich') ||
       n.includes('integral') || n.includes('blanco') || n.includes('artesano') ||
-      n.includes('nutrabien') || n.includes('brioche') || n.includes('tia rosa') || n.includes('tiarosa'))
+      n.includes('nutrabien') || n.includes('brioche') || n.includes('tia rosa') ||
+      n.includes('tiarosa') || n.includes('bauducco') || n.includes('fargo') ||
+      n.includes('magnific'))
     return 'Pan de Molde';
   if (n.includes('rapidita') || n.includes('salma') || n.includes('takis') ||
       n.includes('merienda hit') || n.includes('meriendahit'))
     return 'Otro';
-  if (brand === 'Bimbo' || brand === 'Artesano' || brand === 'Nutrabien' || brand === 'Tia Rosa')
+  if (brand === 'Bimbo' || brand === 'Artesano' || brand === 'Nutrabien' ||
+      brand === 'Tia Rosa' || brand === 'Bauducco' || brand === 'Fargo' ||
+      brand === 'Magnific')
     return 'Pan de Molde';
   if (brand === 'Los Sorchantes' || brand === 'Maestro Cubano')
     return 'Pan de Viena';
+  if (brand === 'Marca Propia' || brand === 'Precio Líder')
+    return 'Pan de Molde';
   return 'Otro';
 }
 
@@ -61,6 +67,12 @@ export const BRAND_SEARCH_TERMS: Record<string, string[]> = {
   'Takis':          ['takis'],
   'Salmas':         ['salmas'],
   'Nutrabien':      ['nutrabien'],
+  // Competencia
+  'Bauducco':       ['bauducco'],
+  'Fargo':          ['fargo'],
+  'Magnific':       ['magnific'],
+  'Marca Propia':   ['marca propia', 'precio lider', 'precio líder', 'seleccion', 'selección'],
+  'Precio Líder':   ['precio lider', 'precio líder'],
 };
 
 export function matchesBrand(text: string): string | null {
@@ -80,6 +92,11 @@ export function matchesBrand(text: string): string | null {
   if (lower.includes('takis')) return 'Takis';
   if (lower.includes('salmas')) return 'Salmas';
   if (lower.includes('nutrabien') || lower.includes('nutra bien')) return 'Nutrabien';
+  if (lower.includes('bauducco')) return 'Bauducco';
+  if (lower.includes('fargo')) return 'Fargo';
+  if (lower.includes('magnific')) return 'Magnific';
+  if (lower.includes('precio lider') || lower.includes('precio líder')) return 'Precio Líder';
+  if (lower.includes('marca propia') || lower.includes('seleccion') || lower.includes('selección')) return 'Marca Propia';
   return null;
 }
 
