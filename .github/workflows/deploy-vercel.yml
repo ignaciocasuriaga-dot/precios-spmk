@@ -1,0 +1,33 @@
+name: Deploy to Vercel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          URL=$(vercel deploy --token ${{ secrets.VERCEL_TOKEN }} --yes --prod 2>&1 | grep -oP 'https://[^\s]+vercel\.app' | tail -1)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "✅ Deployed: $URL"
+
+      - name: Print URL
+        run: echo "🚀 App live at ${{ steps.deploy.outputs.url }}"
