@@ -7,14 +7,11 @@ import Ofertas from '@/components/Ofertas';
 import Alertas from '@/components/Alertas';
 import Cobertura from '@/components/Cobertura';
 import Historico from '@/components/Historico';
-import Login from '@/components/Login';
-import AdminPanel from '@/components/AdminPanel';
 
-type Tab = 'catalogo'|'comparador'|'ofertas'|'alertas'|'cobertura'|'historico'|'login'|'admin';
+type Tab = 'catalogo'|'comparador'|'ofertas'|'alertas'|'cobertura'|'historico';
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>('catalogo');
-  const [user, setUser] = useState<{ email: string; name: string; role: string } | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -25,15 +22,14 @@ export default function Home() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [dataRes, authRes] = await Promise.all([fetch('/api/prices'), fetch('/api/auth')]);
-      const data = await dataRes.json();
-      const auth = await authRes.json();
+      const res = await fetch('/api/prices');
+      const data = await res.json();
       setProducts(data.products || []);
       setHistory(data.history || []);
       setAlerts(data.alerts || []);
-      if (auth.user) setUser(auth.user);
       if (data.products?.length) {
-        const latest = data.products.reduce((a: Product, b: Product) => new Date(a.scrapedAt) > new Date(b.scrapedAt) ? a : b);
+        const latest = data.products.reduce((a: Product, b: Product) =>
+          new Date(a.scrapedAt) > new Date(b.scrapedAt) ? a : b);
         setLastUpdate(latest.scrapedAt);
       }
     } catch (e) { console.error(e); }
@@ -43,24 +39,20 @@ export default function Home() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   async function handleScrape() {
-    if (!user) { setTab('login'); return; }
     setScraping(true); setScrapeMsg(null);
     try {
       const res = await fetch('/api/scrape', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setScrapeMsg({ type: 'ok', text: `✅ ${data.productsFound} productos actualizados, ${data.alertsGenerated} alertas generadas (${data.duration})` });
+        const now = new Date().toISOString();
+        setLastUpdate(now);
+        setScrapeMsg({ type: 'ok', text: `✅ ${data.productsFound} productos actualizados · ${data.alertsGenerated} alertas · ${data.duration}` });
         await fetchData();
       } else {
         setScrapeMsg({ type: 'error', text: `⚠️ ${data.error || 'Error en el scraping'}` });
       }
     } catch { setScrapeMsg({ type: 'error', text: '❌ Error de conexión' }); }
     finally { setScraping(false); }
-  }
-
-  async function handleLogout() {
-    await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
-    setUser(null); setTab('catalogo');
   }
 
   async function handleUpdatePVP(id: string, pvp: number) {
@@ -89,8 +81,6 @@ export default function Home() {
     alertas:    <Alertas alerts={alerts} />,
     cobertura:  <Cobertura products={products} />,
     historico:  <Historico history={history} />,
-    login:      <Login onLogin={u => { setUser(u); setTab('catalogo'); }} />,
-    admin:      user?.role === 'admin' ? <AdminPanel /> : <div className="text-center py-16 text-gray-400">Acceso restringido.</div>,
   };
 
   return (
@@ -111,51 +101,30 @@ export default function Home() {
 
           <div className="flex items-center gap-4">
             {lastUpdate && (
-              <div className="hidden md:block text-right">
+              <div className="text-right">
                 <div className="text-xs text-gray-400 font-medium">Última actualización</div>
-                <div className="text-xs text-gray-600">
+                <div className="text-xs font-semibold text-gray-700">
                   {new Date(lastUpdate).toLocaleString('es-UY', { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
             )}
-
-            {user ? (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleScrape}
-                  disabled={scraping}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all shadow-sm"
-                >
-                  <svg className={`w-4 h-4 ${scraping ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {scraping ? 'Actualizando...' : 'Actualizar precios'}
-                </button>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center border border-gray-200">
-                    {user.name[0].toUpperCase()}
-                  </div>
-                  {user.role === 'admin' && (
-                    <button onClick={() => setTab('admin')} className="text-xs text-purple-600 hover:underline hidden sm:block">Admin</button>
-                  )}
-                  <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500">Salir</button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setTab('login')}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all"
-              >
-                Iniciar sesión
-              </button>
-            )}
+            <button
+              onClick={handleScrape}
+              disabled={scraping}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold px-5 py-2.5 rounded-lg text-sm transition-all shadow-sm"
+            >
+              <svg className={`w-4 h-4 ${scraping ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {scraping ? 'Actualizando...' : 'Actualizar precios'}
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Mensaje scraping */}
+      {/* Mensaje resultado */}
       {scrapeMsg && (
-        <div className={`px-4 py-2 text-sm font-medium text-center ${scrapeMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-b border-green-100' : 'bg-red-50 text-red-700 border-b border-red-100'}`}>
+        <div className={`px-4 py-2.5 text-sm font-medium text-center ${scrapeMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-b border-green-100' : 'bg-red-50 text-red-700 border-b border-red-100'}`}>
           {scrapeMsg.text}
         </div>
       )}
@@ -168,18 +137,14 @@ export default function Home() {
               key={t.id}
               onClick={() => setTab(t.id as Tab)}
               className={`flex items-center gap-2 px-4 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
-                tab === t.id
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
+                tab === t.id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
             >
               {t.label}
               {t.count !== null && t.count > 0 && (
                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
                   tab === t.id ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-500'
-                }`}>
-                  {t.count}
-                </span>
+                }`}>{t.count}</span>
               )}
             </button>
           ))}
@@ -187,34 +152,32 @@ export default function Home() {
       </div>
 
       {/* STAT CARDS */}
-      {tab !== 'login' && tab !== 'admin' && (
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Productos monitoreados</div>
-            <div className="text-3xl font-black text-gray-900">{products.length}</div>
-            {avgPrice > 0 && <div className="text-xs text-gray-400 mt-1">prom ${avgPrice.toLocaleString('es-UY')}</div>}
-          </div>
-          <div className="bg-white rounded-xl border-l-4 border-blue-500 border border-gray-200 p-4">
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Marcas detectadas</div>
-            <div className="text-3xl font-black text-gray-900">{brandCount}</div>
-            <div className="text-xs text-gray-400 mt-1">{brandCount} configuradas</div>
-          </div>
-          <div className="bg-white rounded-xl border-l-4 border-orange-400 border border-gray-200 p-4">
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Supers con productos</div>
-            <div className="text-3xl font-black text-gray-900">{superCount}/4</div>
-            <div className="text-xs text-gray-400 mt-1 truncate">
-              {[...new Set(products.map(p => p.supermarket))].join(', ') || '—'}
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border-l-4 border-green-500 border border-gray-200 p-4">
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ofertas activas</div>
-            <div className="text-3xl font-black text-gray-900">{offerCount}</div>
-            <div className="text-xs text-gray-400 mt-1">
-              {products.length > 0 ? `${Math.round((offerCount / products.length) * 100)}% del catálogo` : '—'}
-            </div>
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Productos monitoreados</div>
+          <div className="text-3xl font-black text-gray-900">{products.length}</div>
+          {avgPrice > 0 && <div className="text-xs text-gray-400 mt-1">prom ${avgPrice.toLocaleString('es-UY')}</div>}
+        </div>
+        <div className="bg-white rounded-xl border-l-4 border-blue-500 border border-gray-200 p-4">
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Marcas detectadas</div>
+          <div className="text-3xl font-black text-gray-900">{brandCount}</div>
+          <div className="text-xs text-gray-400 mt-1">{brandCount} configuradas</div>
+        </div>
+        <div className="bg-white rounded-xl border-l-4 border-orange-400 border border-gray-200 p-4">
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Supers con productos</div>
+          <div className="text-3xl font-black text-gray-900">{superCount}/4</div>
+          <div className="text-xs text-gray-400 mt-1 truncate">
+            {[...new Set(products.map(p => p.supermarket))].join(', ') || '—'}
           </div>
         </div>
-      )}
+        <div className="bg-white rounded-xl border-l-4 border-green-500 border border-gray-200 p-4">
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ofertas activas</div>
+          <div className="text-3xl font-black text-gray-900">{offerCount}</div>
+          <div className="text-xs text-gray-400 mt-1">
+            {products.length > 0 ? `${Math.round((offerCount / products.length) * 100)}% del catálogo` : '—'}
+          </div>
+        </div>
+      </div>
 
       {/* CONTENIDO */}
       <main className="max-w-screen-xl mx-auto px-4 sm:px-6 pb-10">
