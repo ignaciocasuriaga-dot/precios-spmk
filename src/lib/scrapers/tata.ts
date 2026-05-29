@@ -12,13 +12,19 @@ const KNOWN_SKUS = [
   '86714','148195',
 ];
 
+// Marcas a buscar en Tata
+const SEARCH_TERMS = [
+  'bimbo', 'sorchantes', 'artesano', 'bimbo vital',
+  'bauducco', 'visconti', 'marbella', 'campestre', 'fantastico',
+  'precio lider', 'ta-ta',
+];
+
 export async function scrapeTata(): Promise<Product[]> {
   const products: Product[] = [];
   const seen = new Set<string>();
   const timestamp = new Date().toISOString();
   const BASE = 'https://www.tata.com.uy';
 
-  // ── Método 1: SKUs conocidos (siempre corre primero) ──────────────────────
   for (const sku of KNOWN_SKUS) {
     try {
       const res = await fetch(
@@ -49,8 +55,7 @@ export async function scrapeTata(): Promise<Product[]> {
       seen.add(id);
       products.push({
         id, name, brand, supermarket: 'Tata',
-        publishedPrice: price,
-        regularPrice,
+        publishedPrice: price, regularPrice,
         offerPrice: regularPrice ? price : null,
         discount: calcDiscount(regularPrice, regularPrice ? price : null),
         pvpSugerido: null, gapPercent: null,
@@ -64,9 +69,7 @@ export async function scrapeTata(): Promise<Product[]> {
     }
   }
 
-  // ── Método 2: búsqueda por término (complemento) ──────────────────────────
-  const searchTerms = ['bimbo','sorchantes','rapiditas','maestro cubano','nutrabien','tia rosa','salmas'];
-  for (const term of searchTerms) {
+  for (const term of SEARCH_TERMS) {
     try {
       const res = await fetch(
         `${BASE}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=49`,
@@ -98,8 +101,7 @@ export async function scrapeTata(): Promise<Product[]> {
         seen.add(id);
         products.push({
           id, name, brand, supermarket: 'Tata',
-          publishedPrice: price,
-          regularPrice,
+          publishedPrice: price, regularPrice,
           offerPrice: regularPrice ? price : null,
           discount: calcDiscount(regularPrice, regularPrice ? price : null),
           pvpSugerido: null, gapPercent: null,

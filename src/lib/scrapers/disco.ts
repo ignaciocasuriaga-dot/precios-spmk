@@ -1,10 +1,15 @@
 import { Product } from '@/types';
 import { matchesBrand, calcDiscount, generateId } from '../utils';
 
-// SKUs conocidos de Bimbo en Disco/Devoto
 const KNOWN_SKUS = [
   '660290','660362','661630','661650','663951','601812',
   '660289','660361','661629','661649',
+];
+
+const SEARCH_TERMS = [
+  'bimbo', 'sorchantes', 'artesano', 'bimbo vital',
+  'bauducco', 'visconti', 'marbella', 'campestre', 'fantastico',
+  'precio lider', 'precio líder',
 ];
 
 async function fetchSku(sku: string, BASE: string, superName: string, timestamp: string): Promise<Product | null> {
@@ -51,15 +56,12 @@ async function scrapeStore(BASE: string, superName: string): Promise<Product[]> 
   const seen = new Set<string>();
   const products: Product[] = [];
 
-  // Método 1: SKUs conocidos en paralelo
   const bySkus = await Promise.all(KNOWN_SKUS.map(s => fetchSku(s, BASE, superName, timestamp)));
   for (const p of bySkus) {
     if (p && !seen.has(p.id)) { seen.add(p.id); products.push(p); }
   }
 
-  // Método 2: búsqueda por término (complemento)
-  const terms = ['bimbo', 'sorchantes', 'rapiditas', 'maestro cubano', 'nutrabien', 'tia rosa', 'salmas'];
-  for (const term of terms) {
+  for (const term of SEARCH_TERMS) {
     try {
       const res = await fetch(
         `${BASE}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(term)}&_from=0&_to=49`,
@@ -107,9 +109,5 @@ async function scrapeStore(BASE: string, superName: string): Promise<Product[]> 
 }
 
 export async function scrapeDisco(): Promise<Product[]> {
-  const [disco, devoto] = await Promise.all([
-    scrapeStore('https://www.disco.com.uy', 'Disco'),
-    scrapeStore('https://www.devoto.com.uy', 'Devoto'),
-  ]);
-  return [...disco, ...devoto];
+  return scrapeStore('https://www.disco.com.uy', 'Disco');
 }
