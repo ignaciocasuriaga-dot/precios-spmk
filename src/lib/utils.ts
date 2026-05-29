@@ -1,19 +1,19 @@
 export const TARGET_BRANDS = [
   // Grupo Bimbo
-  'Bimbo', 'Los Sorchantes', 'Artesano', 'Tia Rosa', 'Nutrabien',
-  'Rapiditas', 'Salmas', 'Merienda Hit', 'Takis',
-  // Competencia pan
-  'Bauducco', 'Fargo', 'Magnific', 'Maestro Cubano',
-  'Marca Propia', 'Precio Líder',
+  'Bimbo', 'Artesano', 'Bimbo Vital', 'Los Sorchantes',
+  // Competencia Pan de Molde
+  'Bauducco', 'Visconti', 'Sanosinharina', 'Marbella', 'Glu', 'Campestre', 'Fantastico',
+  // Competencia Pan de Tortuga/Viena
+  'Glu Free', 'Pagnifique',
+  // Marcas propias de cadenas
+  'Precio Líder', 'Ta-Ta', 'Tienda Inglesa',
 ] as const;
 
 export type BreadCategory = 'Pan de Molde' | 'Pan de Tortuga' | 'Pan de Viena' | 'Otro';
 export const BREAD_CATEGORIES: BreadCategory[] = ['Pan de Molde', 'Pan de Tortuga', 'Pan de Viena'];
 
-// Todas las marcas del Grupo Bimbo monitoreadas
 export const BIMBO_OWN_BRANDS = new Set([
-  'Bimbo', 'Los Sorchantes', 'Artesano', 'Tia Rosa',
-  'Nutrabien', 'Rapiditas', 'Salmas', 'Merienda Hit', 'Takis',
+  'Bimbo', 'Artesano', 'Bimbo Vital', 'Los Sorchantes',
 ]);
 
 export function detectCategory(name: string, brand?: string): BreadCategory {
@@ -26,27 +26,33 @@ export function detectCategory(name: string, brand?: string): BreadCategory {
       n.includes('sorchante') || n.includes('cubano') || n.includes('criollito') ||
       n.includes('pan franc'))
     return 'Pan de Viena';
+  if (n.includes('glu free') || n.includes('gluten free'))
+    return 'Pan de Tortuga';
+  if (n.includes('pagnifique'))
+    return 'Pan de Tortuga';
   if (n.includes('lactal') || n.includes('molde') || n.includes('sandwich') ||
       n.includes('integral') || n.includes('blanco') || n.includes('artesano') ||
-      n.includes('nutrabien') || n.includes('brioche') || n.includes('tia rosa') ||
-      n.includes('tiarosa') || n.includes('bauducco') || n.includes('fargo') ||
-      n.includes('magnific'))
+      n.includes('brioche') || n.includes('bauducco') || n.includes('visconti') ||
+      n.includes('marbella') || n.includes('campestre') || n.includes('fantastico') ||
+      n.includes('fantástico') || n.includes('vital') || n.includes('lacteado') ||
+      n.includes('sin gluten') || n.includes('sanosinharina'))
     return 'Pan de Molde';
-  if (n.includes('rapidita') || n.includes('salma') || n.includes('takis') ||
-      n.includes('merienda hit') || n.includes('meriendahit'))
-    return 'Otro';
-  if (brand === 'Bimbo' || brand === 'Artesano' || brand === 'Nutrabien' ||
-      brand === 'Tia Rosa' || brand === 'Bauducco' || brand === 'Fargo' ||
-      brand === 'Magnific')
+  // Brand-based fallback
+  if (brand === 'Bimbo' || brand === 'Artesano' || brand === 'Bimbo Vital' ||
+      brand === 'Bauducco' || brand === 'Visconti' || brand === 'Marbella' ||
+      brand === 'Campestre' || brand === 'Fantastico' || brand === 'Glu' ||
+      brand === 'Sanosinharina')
     return 'Pan de Molde';
-  if (brand === 'Los Sorchantes' || brand === 'Maestro Cubano')
+  if (brand === 'Los Sorchantes')
     return 'Pan de Viena';
-  if (brand === 'Marca Propia' || brand === 'Precio Líder')
+  if (brand === 'Glu Free' || brand === 'Pagnifique')
+    return 'Pan de Tortuga';
+  if (brand === 'Precio Líder' || brand === 'Ta-Ta' || brand === 'Tienda Inglesa')
     return 'Pan de Molde';
   return 'Otro';
 }
 
-export const SUPERMARKETS = ['Tienda Inglesa','Tata','Disco','El Dorado'] as const;
+export const SUPERMARKETS = ['Tienda Inglesa', 'Tata', 'Disco', 'El Dorado'] as const;
 
 export const SUPERMARKET_COLORS: Record<string, string> = {
   'Tienda Inglesa': 'bg-red-100 text-red-800 border-red-200',
@@ -55,24 +61,22 @@ export const SUPERMARKET_COLORS: Record<string, string> = {
   'El Dorado':      'bg-yellow-100 text-yellow-800 border-yellow-200',
 };
 
-// Un término de búsqueda por marca — corto y preciso para que la API lo encuentre
 export const BRAND_SEARCH_TERMS: Record<string, string[]> = {
-  'Los Sorchantes': ['sorchantes'],
-  'Tia Rosa':       ['tia rosa'],
   'Bimbo':          ['bimbo'],
-  'Rapiditas':      ['rapiditas'],
   'Artesano':       ['artesano'],
-  'Maestro Cubano': ['maestro cubano'],
-  'Merienda Hit':   ['merienda hit'],
-  'Takis':          ['takis'],
-  'Salmas':         ['salmas'],
-  'Nutrabien':      ['nutrabien'],
-  // Competencia
+  'Bimbo Vital':    ['bimbo vital'],
+  'Los Sorchantes': ['sorchantes'],
   'Bauducco':       ['bauducco'],
-  'Fargo':          ['fargo'],
-  'Magnific':       ['magnific'],
-  'Marca Propia':   ['marca propia', 'precio lider', 'precio líder', 'seleccion', 'selección'],
+  'Visconti':       ['visconti'],
+  'Sanosinharina':  ['sanosinharina', 'sano sin harina'],
+  'Marbella':       ['marbella'],
+  'Glu':            ['pan glu', 'glu sin gluten'],
+  'Glu Free':       ['glu free'],
+  'Campestre':      ['campestre'],
+  'Fantastico':     ['fantastico', 'fantástico'],
+  'Pagnifique':     ['pagnifique'],
   'Precio Líder':   ['precio lider', 'precio líder'],
+  'Ta-Ta':          ['ta-ta'],
 };
 
 export function matchesBrand(text: string): string | null {
@@ -81,22 +85,6 @@ export function matchesBrand(text: string): string | null {
   for (const [brand, terms] of Object.entries(BRAND_SEARCH_TERMS)) {
     if (terms.some(t => lower.includes(t.toLowerCase()))) return brand;
   }
-  // Detección adicional por nombre de marca directa
-  if (lower.includes('sorchante')) return 'Los Sorchantes';
-  if (lower.includes('tia rosa') || lower.includes('tiarosa')) return 'Tia Rosa';
-  if (lower.includes('bimbo')) return 'Bimbo';
-  if (lower.includes('rapidita')) return 'Rapiditas';
-  if (lower.includes('artesano')) return 'Artesano';
-  if (lower.includes('maestro cubano') || lower.includes('maestrocubano')) return 'Maestro Cubano';
-  if (lower.includes('merienda hit') || lower.includes('meriendahit')) return 'Merienda Hit';
-  if (lower.includes('takis')) return 'Takis';
-  if (lower.includes('salmas')) return 'Salmas';
-  if (lower.includes('nutrabien') || lower.includes('nutra bien')) return 'Nutrabien';
-  if (lower.includes('bauducco')) return 'Bauducco';
-  if (lower.includes('fargo')) return 'Fargo';
-  if (lower.includes('magnific')) return 'Magnific';
-  if (lower.includes('precio lider') || lower.includes('precio líder')) return 'Precio Líder';
-  if (lower.includes('marca propia') || lower.includes('seleccion') || lower.includes('selección')) return 'Marca Propia';
   return null;
 }
 
