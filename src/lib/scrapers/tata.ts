@@ -12,11 +12,10 @@ const KNOWN_SKUS = [
   '86714','148195',
 ];
 
-// Marcas a buscar en Tata
 const SEARCH_TERMS = [
   'bimbo', 'sorchantes', 'artesano', 'bimbo vital',
-  'bauducco', 'visconti', 'marbella', 'campestre', 'fantastico',
-  'precio lider', 'ta-ta',
+  'tia rosa', 'merienda hit', 'rapiditas',
+  'nutrabien', 'salmas', 'maestro cubano',
 ];
 
 export async function scrapeTata(): Promise<Product[]> {

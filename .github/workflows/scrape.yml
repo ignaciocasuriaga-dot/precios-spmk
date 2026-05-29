@@ -25,28 +25,18 @@ jobs:
           cat > /tmp/scraper.mjs << 'EOF'
           import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 
-          // Marcas Bimbo (MI EMPRESA) y competencia exacta
+          // Marcas Grupo Bimbo Uruguay
           const BRAND_TERMS = {
-            // Bimbo Group
             'Bimbo':          ['bimbo'],
             'Artesano':       ['artesano'],
             'Bimbo Vital':    ['bimbo vital'],
             'Los Sorchantes': ['sorchantes'],
-            // Competencia Pan de Molde
-            'Bauducco':       ['bauducco'],
-            'Visconti':       ['visconti'],
-            'Sanosinharina':  ['sanosinharina', 'sano sin harina'],
-            'Marbella':       ['marbella'],
-            'Glu':            ['pan glu', 'glu sin gluten'],
-            'Glu Free':       ['glu free'],
-            'Campestre':      ['campestre'],
-            'Fantastico':     ['fantastico', 'fantástico'],
-            // Competencia Pan de Tortuga/Viena
-            'Pagnifique':     ['pagnifique'],
-            // Marcas propias cadenas
-            'Precio Líder':   ['precio lider', 'precio líder'],
-            'Ta-Ta':          ['ta-ta'],
-            'Tienda Inglesa': ['tienda inglesa pan', 'pan tienda inglesa'],
+            'Tía Rosa':       ['tia rosa', 'tía rosa'],
+            'Merienda Hit':   ['merienda hit'],
+            'Rapiditas':      ['rapiditas'],
+            'Nutrabien':      ['nutrabien', 'nutra bien'],
+            'Salmas':         ['salmas'],
+            'Maestro Cubano': ['maestro cubano'],
           };
 
           const SUPER_NAMES = {
@@ -139,10 +129,10 @@ jobs:
           const TATA_SKUS = ['823','138617','117854','152701','86737','152700','117853','117856','822','3776','169382','3765','3764','14577','3775','820','821','7776','3757','3759','832','828','136772','136769','136770','136768','86738','3735','86717','136863','18253','747','746','743','744','745','3685','3686','3689','86792','149195','149198','149193','149194','806','805','157041','86711','169928','169942','86714','148195'];
 
           const TERMS_BY_STORE = {
-            tata:          ['bimbo','sorchantes','artesano','bimbo vital','bauducco','visconti','marbella','campestre','fantastico','ta-ta'],
-            disco:         ['bimbo','sorchantes','artesano','bimbo vital','bauducco','visconti','marbella','campestre','fantastico','precio lider'],
-            tiendainglesa: ['bimbo','sorchantes','artesano','bimbo vital','bauducco','sanosinharina','glu','pagnifique','tienda inglesa pan'],
-            eldorado:      ['bimbo','sorchantes','artesano','bimbo vital','bauducco','sanosinharina','glu','pagnifique','marbella','fantastico'],
+            tata:          ['bimbo','sorchantes','artesano','bimbo vital','tia rosa','merienda hit','rapiditas','nutrabien','salmas','maestro cubano'],
+            disco:         ['bimbo','sorchantes','artesano','bimbo vital','tia rosa','merienda hit','rapiditas','nutrabien','salmas','maestro cubano'],
+            tiendainglesa: ['bimbo','sorchantes','artesano','bimbo vital','tia rosa','merienda hit','rapiditas','nutrabien','salmas','maestro cubano'],
+            eldorado:      ['bimbo','sorchantes','artesano','bimbo vital','tia rosa','merienda hit','rapiditas','nutrabien','salmas','maestro cubano'],
           };
 
           async function main() {

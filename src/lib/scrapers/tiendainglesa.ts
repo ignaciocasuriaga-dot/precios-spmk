@@ -3,8 +3,8 @@ import { matchesBrand, calcDiscount, generateId } from '../utils';
 
 const SEARCH_TERMS = [
   'bimbo', 'sorchantes', 'artesano', 'bimbo vital',
-  'bauducco', 'sanosinharina', 'glu', 'pagnifique',
-  'tienda inglesa',
+  'tia rosa', 'merienda hit', 'rapiditas',
+  'nutrabien', 'salmas', 'maestro cubano',
 ];
 
 export async function scrapeTiendaInglesa(): Promise<Product[]> {

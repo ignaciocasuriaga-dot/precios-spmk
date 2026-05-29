@@ -1,216 +1,205 @@
 'use client';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Product } from '@/types';
-import { detectCategory, BIMBO_OWN_BRANDS, BREAD_CATEGORIES, formatPrice } from '@/lib/utils';
+import { TARGET_BRANDS, formatPrice } from '@/lib/utils';
 import {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  ResponsiveContainer, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  ResponsiveContainer, CartesianGrid, Cell,
 } from 'recharts';
+import { SuperLogo } from '@/components/SuperLogo';
 
 interface Props { products: Product[]; }
 
+const SUPERS = ['Tata', 'Disco', 'Tienda Inglesa', 'El Dorado'] as const;
 const SUPER_COLORS: Record<string, string> = {
-  'Tata': '#F97316',
-  'Disco': '#7C3AED',
-  'Tienda Inglesa': '#DC2626',
-  'El Dorado': '#D97706',
+  'Tata': '#F97316', 'Disco': '#7C3AED', 'Tienda Inglesa': '#DC2626', 'El Dorado': '#D97706',
 };
-const PIE_COLORS = ['#F97316', '#7C3AED', '#DC2626', '#D97706'];
-const RADIAN = Math.PI / 180;
-
-function PieLabel(props: Record<string, unknown>) {
-  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props as {
-    cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number;
-  };
-  if (percent < 0.06) return null;
-  const r = innerRadius + (outerRadius - innerRadius) * 0.5;
-  const x = cx + r * Math.cos(-midAngle * RADIAN);
-  const y = cy + r * Math.sin(-midAngle * RADIAN);
-  return (
-    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
-      {`${(percent * 100).toFixed(0)}%`}
-    </text>
-  );
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fmtUYU(v: any) { return `$${Number(v).toLocaleString('es-UY')}`; }
 
 export default function Comparativa({ products }: Props) {
-  const superCountData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const p of products) counts[p.supermarket] = (counts[p.supermarket] || 0) + 1;
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [products]);
+  const [view, setView] = useState<'tabla' | 'graficos'>('tabla');
 
-  const avgPriceData = useMemo(() => {
-    const sums: Record<string, { sum: number; count: number }> = {};
-    for (const p of products) {
-      if (!sums[p.supermarket]) sums[p.supermarket] = { sum: 0, count: 0 };
-      sums[p.supermarket].sum += p.publishedPrice;
-      sums[p.supermarket].count += 1;
-    }
-    return Object.entries(sums)
-      .map(([name, { sum, count }]) => ({ name, avg: Math.round(sum / count) }))
-      .sort((a, b) => a.avg - b.avg);
-  }, [products]);
+  const ownProducts = useMemo(
+    () => products.filter(p => TARGET_BRANDS.includes(p.brand as typeof TARGET_BRANDS[number])),
+    [products]
+  );
 
-  const categoryData = useMemo(() => {
-    return BREAD_CATEGORIES.map(cat => {
-      const catProds = products.filter(p => detectCategory(p.name, p.brand) === cat);
-      const bimbo = catProds.filter(p => BIMBO_OWN_BRANDS.has(p.brand));
-      const comp = catProds.filter(p => !BIMBO_OWN_BRANDS.has(p.brand));
-      const bimboAvg = bimbo.length ? Math.round(bimbo.reduce((s, p) => s + p.publishedPrice, 0) / bimbo.length) : 0;
-      const compAvg = comp.length ? Math.round(comp.reduce((s, p) => s + p.publishedPrice, 0) / comp.length) : 0;
-      return { category: cat.replace('Pan de ', ''), Bimbo: bimboAvg, Competencia: compAvg };
+  // Cross-super table: for each brand, cheapest price per super
+  const crossSuperData = useMemo(() => {
+    const brands = [...new Set(ownProducts.map(p => p.brand))].sort();
+    return brands.map(brand => {
+      const bySuper: Record<string, Product> = {};
+      for (const p of ownProducts.filter(p => p.brand === brand)) {
+        const existing = bySuper[p.supermarket];
+        if (!existing || p.publishedPrice < existing.publishedPrice) bySuper[p.supermarket] = p;
+      }
+      const prices = SUPERS.map(s => bySuper[s]?.publishedPrice ?? null).filter(Boolean) as number[];
+      const minPrice = prices.length ? Math.min(...prices) : null;
+      return { brand, bySuper, minPrice };
     });
-  }, [products]);
+  }, [ownProducts]);
 
-  const offerData = useMemo(() => {
-    const by: Record<string, { total: number; offers: number }> = {};
-    for (const p of products) {
-      if (!by[p.supermarket]) by[p.supermarket] = { total: 0, offers: 0 };
-      by[p.supermarket].total += 1;
-      if (p.offerPrice) by[p.supermarket].offers += 1;
-    }
-    return Object.entries(by).map(([name, { total, offers }]) => ({
-      name, pct: Math.round((offers / total) * 100), offers, total,
-    }));
-  }, [products]);
+  // Bar chart data: avg price per brand
+  const avgByBrand = useMemo(() => {
+    const brands = [...new Set(ownProducts.map(p => p.brand))].sort();
+    return brands.map(brand => {
+      const prods = ownProducts.filter(p => p.brand === brand);
+      const avg = prods.length ? Math.round(prods.reduce((s, p) => s + p.publishedPrice, 0) / prods.length) : 0;
+      return { brand: brand.length > 10 ? brand.slice(0, 10) + '…' : brand, avg, fullBrand: brand };
+    });
+  }, [ownProducts]);
 
-  const priceRangeData = useMemo(() => {
-    const by: Record<string, number[]> = {};
-    for (const p of products) {
-      if (!by[p.supermarket]) by[p.supermarket] = [];
-      by[p.supermarket].push(p.publishedPrice);
-    }
-    return Object.entries(by).map(([name, prices]) => ({
-      name,
-      min: Math.min(...prices),
-      max: Math.max(...prices),
-      avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
-    }));
-  }, [products]);
+  // Bar chart data: product count per super
+  const countBySuperBrand = useMemo(() => {
+    return SUPERS.map(sup => {
+      const row: Record<string, number | string> = { super: sup };
+      for (const b of [...new Set(ownProducts.map(p => p.brand))]) {
+        row[b] = ownProducts.filter(p => p.supermarket === sup && p.brand === b).length;
+      }
+      return row;
+    });
+  }, [ownProducts]);
 
-  if (products.length === 0) {
+  if (ownProducts.length === 0) {
     return <div className="text-center py-20 text-gray-400 text-sm">Sin datos. Presioná "Actualizar precios".</div>;
   }
 
+  const brandList = [...new Set(ownProducts.map(p => p.brand))].sort();
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Pie: distribución por supermercado */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-bold text-gray-700 mb-4">Distribución de productos por supermercado</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={superCountData} dataKey="value" nameKey="name"
-                cx="50%" cy="50%" outerRadius={85} labelLine={false}
-                label={(props) => <PieLabel {...props} />}>
-                {superCountData.map((entry, i) => (
-                  <Cell key={entry.name} fill={SUPER_COLORS[entry.name] || PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v) => [`${v} productos`]} />
-              <Legend iconSize={10} formatter={(v) => <span style={{ fontSize: 12 }}>{v}</span>} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Bar: precio promedio por supermercado */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-bold text-gray-700 mb-4">Precio promedio por supermercado (UYU)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={avgPriceData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}`} />
-              <Tooltip formatter={(v) => [fmtUYU(v), 'Precio promedio']} />
-              <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-                {avgPriceData.map((entry) => (
-                  <Cell key={entry.name} fill={SUPER_COLORS[entry.name] || '#6b7280'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Bar: Bimbo vs Competencia por categoría */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-bold text-gray-700 mb-4">Precio promedio — Bimbo vs Competencia por categoría</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={categoryData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="category" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}`} />
-              <Tooltip formatter={(v) => [fmtUYU(v)]} />
-              <Legend iconSize={10} formatter={(v) => <span style={{ fontSize: 12 }}>{v}</span>} />
-              <Bar dataKey="Bimbo" fill="#DC2626" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Competencia" fill="#6b7280" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Bar: % en oferta por supermercado */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-bold text-gray-700 mb-4">Productos en oferta por supermercado (%)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={offerData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
-              <Tooltip
-                formatter={(v, _n, props) => {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const pl = (props as any).payload;
-                  return [`${v}% (${pl?.offers ?? 0}/${pl?.total ?? 0} productos)`, 'En oferta'];
-                }}
-              />
-              <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
-                {offerData.map((entry) => (
-                  <Cell key={entry.name} fill={SUPER_COLORS[entry.name] || '#6b7280'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+    <div className="space-y-5">
+      {/* View toggle */}
+      <div className="flex gap-2">
+        {(['tabla', 'graficos'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${
+              view === v ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200 hover:border-red-300'
+            }`}>
+            {v === 'tabla' ? '📊 Tabla comparativa' : '📈 Gráficos'}
+          </button>
+        ))}
       </div>
 
-      {/* Tabla rango de precios */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-bold text-gray-700 mb-4">Rango de precios por supermercado</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100">
-                {['Supermercado', 'Mínimo', 'Promedio', 'Máximo', 'Amplitud'].map((h, i) => (
-                  <th key={h} className={`py-2 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {priceRangeData.map(row => {
-                const color = SUPER_COLORS[row.name] || '#6b7280';
-                return (
-                  <tr key={row.name} className="hover:bg-gray-50">
-                    <td className="py-2.5 px-3">
-                      <span style={{ background: color + '20', color, border: `1px solid ${color}40` }}
-                        className="text-xs font-bold px-2.5 py-1 rounded-full">
-                        {row.name}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-green-600 font-semibold">{formatPrice(row.min)}</td>
-                    <td className="py-2.5 px-3 text-right text-gray-700 font-semibold">{formatPrice(row.avg)}</td>
-                    <td className="py-2.5 px-3 text-right text-red-500 font-semibold">{formatPrice(row.max)}</td>
-                    <td className="py-2.5 px-3 text-right text-gray-400">{formatPrice(row.max - row.min)}</td>
+      {view === 'tabla' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="text-sm font-bold text-gray-700">Precio más bajo por marca en cada supermercado</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Verde = más barato · — = no disponible</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Marca</th>
+                  {SUPERS.map(sup => (
+                    <th key={sup} className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <SuperLogo name={sup} size={18} />
+                        <span>{sup === 'Tienda Inglesa' ? 'T. Inglesa' : sup}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {crossSuperData.map(({ brand, bySuper, minPrice }) => (
+                  <tr key={brand} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-semibold text-gray-800 text-sm whitespace-nowrap">{brand}</td>
+                    {SUPERS.map(sup => {
+                      const p = bySuper[sup];
+                      const isCheapest = p && p.publishedPrice === minPrice;
+                      return (
+                        <td key={sup} className="px-4 py-3 text-center">
+                          {p ? (
+                            <div className={`inline-flex flex-col items-center ${isCheapest ? 'text-green-700' : 'text-gray-700'}`}>
+                              <span className={`text-sm font-bold ${isCheapest ? '' : ''}`}>
+                                {formatPrice(p.publishedPrice)}
+                                {isCheapest && <span className="ml-0.5 text-xs">✓</span>}
+                              </span>
+                              {p.regularPrice && (
+                                <span className="text-xs text-orange-500 font-semibold">-{p.discount}%</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-300 text-sm">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {view === 'graficos' && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Precio promedio por marca */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-bold text-gray-700 mb-4">Precio promedio por marca (UYU)</h3>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={avgByBrand} layout="vertical" margin={{ top: 4, right: 20, left: 60, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `$${v}`} />
+                  <YAxis type="category" dataKey="brand" tick={{ fontSize: 11 }} width={60} />
+                  <Tooltip formatter={(v) => [fmtUYU(v), 'Precio promedio']} />
+                  <Bar dataKey="avg" fill="#DC2626" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Productos por supermarket */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-bold text-gray-700 mb-4">Presencia por supermercado (productos)</h3>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={countBySuperBrand} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="super" tick={{ fontSize: 10 }} tickFormatter={s => s === 'Tienda Inglesa' ? 'T.Inglesa' : s} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Legend iconSize={8} formatter={(v) => <span style={{ fontSize: 11 }}>{v}</span>} />
+                  {brandList.slice(0, 6).map((b, i) => (
+                    <Bar key={b} dataKey={b} stackId="a" fill={['#DC2626','#F97316','#D97706','#16A34A','#7C3AED','#0891B2'][i % 6]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Precio por super para cada marca - mini charts */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-sm font-bold text-gray-700 mb-4">Precio más bajo por supermercado para cada marca</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {crossSuperData.map(({ brand, bySuper, minPrice }) => {
+                const data = SUPERS.map(sup => ({ sup: sup === 'Tienda Inglesa' ? 'T.Inglesa' : sup, precio: bySuper[sup]?.publishedPrice ?? 0, color: SUPER_COLORS[sup] })).filter(d => d.precio > 0);
+                if (data.length === 0) return null;
+                return (
+                  <div key={brand} className="border border-gray-100 rounded-lg p-3">
+                    <div className="text-xs font-bold text-gray-600 mb-2">{brand}</div>
+                    <ResponsiveContainer width="100%" height={80}>
+                      <BarChart data={data} margin={{ top: 0, right: 4, left: -20, bottom: 0 }}>
+                        <XAxis dataKey="sup" tick={{ fontSize: 9 }} />
+                        <YAxis tick={{ fontSize: 9 }} tickFormatter={v => `$${v}`} />
+                        <Tooltip formatter={(v) => [fmtUYU(v), brand]} />
+                        <Bar dataKey="precio" radius={[3, 3, 0, 0]}>
+                          {data.map((entry) => (
+                            <Cell key={entry.sup} fill={entry.precio === minPrice ? '#16A34A' : entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -8,8 +8,8 @@ const KNOWN_SKUS = [
 
 const SEARCH_TERMS = [
   'bimbo', 'sorchantes', 'artesano', 'bimbo vital',
-  'bauducco', 'visconti', 'marbella', 'campestre', 'fantastico',
-  'precio lider', 'precio líder',
+  'tia rosa', 'merienda hit', 'rapiditas',
+  'nutrabien', 'salmas', 'maestro cubano',
 ];
 
 async function fetchSku(sku: string, BASE: string, superName: string, timestamp: string): Promise<Product | null> {
