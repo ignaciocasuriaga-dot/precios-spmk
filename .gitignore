@@ -15,6 +15,7 @@ dist/
 
 # generated
 next-env.d.ts
+tsconfig.tsbuildinfo
 
 # logs
 *.log
@@ -23,3 +24,6 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code session data
+.claude/
