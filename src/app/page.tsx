@@ -1,22 +1,25 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { Product, PriceHistoryEntry, Alert } from '@/types';
+import { Product, Alert } from '@/types';
 import Alertas from '@/components/Alertas';
 import Ofertas from '@/components/Ofertas';
-import BimboAnalysis from '@/components/BimboAnalysis';
 import Comparativa from '@/components/Comparativa';
 import MiPVP from '@/components/MiPVP';
+import PriceTable from '@/components/PriceTable';
+import Cobertura from '@/components/Cobertura';
+import InformeGerencial from '@/components/InformeGerencial';
 
-type Tab = 'precios' | 'comparativas' | 'mipvp' | 'ofertas' | 'alertas';
+type Tab = 'catalogo' | 'comparador' | 'ofertas' | 'pvp' | 'cobertura' | 'exec';
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>('precios');
+  const [tab, setTab] = useState<Tab>('catalogo');
   const [products, setProducts] = useState<Product[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
   const [scrapeMsg, setScrapeMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -25,7 +28,7 @@ export default function Home() {
       setProducts(data.products || []);
       setAlerts(data.alerts || []);
       if (data.products?.length) {
-        const latest = (data.products as Product[]).reduce((a: Product, b: Product) =>
+        const latest = data.products.reduce((a: Product, b: Product) =>
           new Date(a.scrapedAt) > new Date(b.scrapedAt) ? a : b);
         setLastUpdate(latest.scrapedAt);
       }
@@ -57,23 +60,71 @@ export default function Home() {
     await fetchData();
   }
 
+  async function handleUpdatePVP(id: string, pvp: number) {
+    await fetch('/api/prices', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, pvp }) });
+    await fetchData();
+  }
+
   const offerCount = products.filter(p => p.offerPrice).length;
+  const brandCount = new Set(products.map(p => p.brand)).size;
+  const superCount = new Set(products.map(p => p.supermarket)).size;
 
-  const TABS: Array<{ id: Tab; label: string; count?: number }> = [
-    { id: 'precios',      label: 'Precios',      count: products.length },
-    { id: 'comparativas', label: 'Comparativas' },
-    { id: 'mipvp',        label: 'Mi PVP' },
-    { id: 'ofertas',      label: 'Ofertas',      count: offerCount },
-    { id: 'alertas',      label: 'Alertas',      count: alerts.length },
+  const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
+    {
+      id: 'catalogo',
+      label: 'Catálogo',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      ),
+    },
+    {
+      id: 'comparador',
+      label: 'Comparador',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'ofertas',
+      label: 'Ofertas',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'pvp',
+      label: 'PVP',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+        </svg>
+      ),
+    },
+    {
+      id: 'cobertura',
+      label: 'Cobertura',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'exec',
+      label: 'Informe Gerencial',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+    },
   ];
-
-  const tabContent: Record<Tab, React.ReactNode> = {
-    precios:      <BimboAnalysis products={products} />,
-    comparativas: <Comparativa products={products} />,
-    mipvp:        <MiPVP products={products} onBatchUpdatePVP={handleBatchUpdatePVP} />,
-    ofertas:      <Ofertas products={products} />,
-    alertas:      <Alertas alerts={alerts} />,
-  };
 
   return (
     <div className="min-h-screen" style={{ background: '#faf9f6' }}>
@@ -82,9 +133,18 @@ export default function Home() {
       <header className="bg-white border-b-2 border-red-600 sticky top-0 z-50">
         <div className="max-w-screen-xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-black text-lg">B</span>
-            </div>
+            {!logoError ? (
+              <img
+                src="/logo.jpg"
+                alt="Grupo Bimbo"
+                className="h-10 w-auto object-contain"
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-lg">B</span>
+              </div>
+            )}
             <div>
               <div className="font-black text-gray-900 text-base leading-tight">Monitor Bimbo UY</div>
               <div className="text-xs text-gray-400 leading-tight">Precios en supermercados</div>
@@ -131,14 +191,62 @@ export default function Home() {
                 tab === t.id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
             >
+              {t.icon}
               {t.label}
-              {t.count !== undefined && t.count > 0 && (
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
-                  tab === t.id ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-500'
-                }`}>{t.count}</span>
-              )}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* KPI BAR */}
+      <div className="bg-white border-b border-gray-100">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-gray-50 rounded-xl px-4 py-2.5 flex items-center gap-3">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-lg font-black text-gray-900">{products.length}</div>
+                <div className="text-xs text-gray-500">Productos relevados</div>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-4 py-2.5 flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-lg font-black text-gray-900">{brandCount}</div>
+                <div className="text-xs text-gray-500">Marcas</div>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-4 py-2.5 flex items-center gap-3">
+              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-lg font-black text-gray-900">{superCount}</div>
+                <div className="text-xs text-gray-500">Supers</div>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-4 py-2.5 flex items-center gap-3">
+              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-lg font-black text-gray-900">{offerCount}</div>
+                <div className="text-xs text-gray-500">En oferta</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -152,8 +260,22 @@ export default function Home() {
             </svg>
             <p className="text-sm">Cargando datos...</p>
           </div>
-        ) : tabContent[tab]}
+        ) : (
+          <>
+            {tab === 'catalogo' && <PriceTable products={products} onUpdatePVP={handleUpdatePVP} onBatchUpdatePVP={handleBatchUpdatePVP} />}
+            {tab === 'comparador' && <Comparativa products={products} />}
+            {tab === 'ofertas' && <Ofertas products={products} />}
+            {tab === 'pvp' && <MiPVP products={products} />}
+            {tab === 'cobertura' && <Cobertura products={products} />}
+            {tab === 'exec' && <InformeGerencial products={products} />}
+          </>
+        )}
       </main>
+
+      {/* Alertas kept hidden for state management */}
+      <div className="hidden">
+        <Alertas alerts={alerts} />
+      </div>
     </div>
   );
 }

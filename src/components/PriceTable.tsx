@@ -2,7 +2,7 @@
 import { useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Product } from '@/types';
-import { TARGET_BRANDS, SUPERMARKETS, SUPERMARKET_COLORS, formatPrice, formatPct } from '@/lib/utils';
+import { TARGET_BRANDS, SUPERMARKETS, SUPERMARKET_COLORS, formatPrice, formatPct, detectCategory, PRODUCT_CATEGORIES } from '@/lib/utils';
 
 interface Props {
   products: Product[];
@@ -12,20 +12,36 @@ interface Props {
 
 export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: Props) {
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
   const [supermarket, setSupermarket] = useState('');
   const [onlyOffers, setOnlyOffers] = useState(false);
   const [sortBy, setSortBy] = useState<keyof Product>('brand');
-  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
-  const [editId, setEditId] = useState<string|null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [editId, setEditId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState('');
   const [pvpMsg, setPvpMsg] = useState<{ type: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Compute which categories/brands/supers are actually present
+  const presentCategories = useMemo(() => {
+    const cats = new Set(products.map(p => detectCategory(p.name, p.brand)));
+    return PRODUCT_CATEGORIES.filter(c => cats.has(c));
+  }, [products]);
+
+  const presentBrands = useMemo(() => {
+    return [...new Set(products.map(p => p.brand))].sort();
+  }, [products]);
+
+  const presentSupers = useMemo(() => {
+    return [...new Set(products.map(p => p.supermarket))].sort();
+  }, [products]);
 
   const filtered = useMemo(() => {
     return products
       .filter(p => {
         if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.brand.toLowerCase().includes(search.toLowerCase())) return false;
+        if (category && detectCategory(p.name, p.brand) !== category) return false;
         if (brand && p.brand !== brand) return false;
         if (supermarket && p.supermarket !== supermarket) return false;
         if (onlyOffers && !p.offerPrice) return false;
@@ -36,7 +52,7 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
         const cmp = typeof va === 'number' ? (va as number) - (vb as number) : String(va).localeCompare(String(vb), 'es');
         return sortDir === 'asc' ? cmp : -cmp;
       });
-  }, [products, search, brand, supermarket, onlyOffers, sortBy, sortDir]);
+  }, [products, search, category, brand, supermarket, onlyOffers, sortBy, sortDir]);
 
   function toggleSort(col: keyof Product) {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -61,7 +77,6 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
       const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as string[][];
       if (rows.length < 2) { setPvpMsg({ type: 'error', text: 'El archivo está vacío o no tiene datos.' }); return; }
 
-      // Detect header row: look for a column with "precio", "pvp" or "price" and one with "producto", "nombre", "marca"
       const header = rows[0].map(c => String(c).toLowerCase().trim());
       const priceColIdx = header.findIndex(h => h.includes('pvp') || h.includes('precio') || h.includes('price') || h.includes('$'));
       const nameColIdx = header.findIndex(h => h.includes('producto') || h.includes('nombre') || h.includes('name') || h.includes('descripcion'));
@@ -93,7 +108,7 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
       }
 
       if (updates.length === 0) {
-        setPvpMsg({ type: 'error', text: 'No se encontraron coincidencias con los productos actuales. Revisá los nombres de columnas (Producto/Marca/PVP).' });
+        setPvpMsg({ type: 'error', text: 'No se encontraron coincidencias. Revisá los nombres de columnas (Producto/Marca/PVP).' });
         return;
       }
 
@@ -109,33 +124,27 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
     }
   }
 
+  const chipBase = 'px-3 py-1 rounded-full text-xs font-semibold border cursor-pointer transition-colors';
+  const chipActive = 'bg-red-600 text-white border-red-600';
+  const chipInactive = 'bg-white text-gray-600 border-gray-200 hover:border-red-300 hover:text-red-600';
+
   const Th = ({ col, label, right }: { col: keyof Product; label: string; right?: boolean }) => (
-    <th onClick={() => toggleSort(col)} className={`px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-800 whitespace-nowrap select-none ${right ? 'text-right' : 'text-left'}`}>
+    <th
+      onClick={() => toggleSort(col)}
+      className={`px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-800 whitespace-nowrap select-none ${right ? 'text-right' : 'text-left'}`}
+    >
       {label}{sortBy === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
     </th>
   );
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* Filters */}
-      <div className="p-4 border-b border-gray-100 flex flex-wrap gap-2 items-center">
-        <input type="text" placeholder="🔍 Buscar..." value={search} onChange={e => setSearch(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-40 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <select value={brand} onChange={e => setBrand(e.target.value)}
-          className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">Todas las marcas</option>
-          {TARGET_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <select value={supermarket} onChange={e => setSupermarket(e.target.value)}
-          className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">Todos los supers</option>
-          {SUPERMARKETS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
-          <input type="checkbox" checked={onlyOffers} onChange={e => setOnlyOffers(e.target.checked)} className="rounded" />
-          Solo ofertas
-        </label>
-        <div className="flex gap-2 ml-auto flex-wrap">
+      {/* Header row: title + export buttons */}
+      <div className="px-4 pt-4 pb-2 border-b border-gray-100 flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-gray-700">
+          {filtered.length} producto{filtered.length !== 1 ? 's' : ''}
+        </span>
+        <div className="flex gap-2 flex-wrap">
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handlePvpFile} />
           <button
             onClick={() => fileRef.current?.click()}
@@ -147,8 +156,85 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
           <a href="/api/export?format=csv" className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-medium transition-colors">↓ CSV</a>
           <a href="/api/export?format=excel" className="text-xs bg-green-50 hover:bg-green-100 text-green-700 px-3 py-1.5 rounded-lg font-medium transition-colors">↓ Excel</a>
         </div>
-        <span className="text-xs text-gray-400">{filtered.length} resultados</span>
       </div>
+
+      {/* Filters */}
+      <div className="px-4 py-3 border-b border-gray-100 space-y-2">
+        {/* Row 1: Search */}
+        <input
+          type="text"
+          placeholder="Buscar producto o marca..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+
+        {/* Row 2: Category chips */}
+        {presentCategories.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <button
+              onClick={() => setCategory('')}
+              className={`${chipBase} ${category === '' ? chipActive : chipInactive}`}
+            >
+              Todos los grupos
+            </button>
+            {presentCategories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setCategory(cat === category ? '' : cat)}
+                className={`${chipBase} ${category === cat ? chipActive : chipInactive}`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Row 3: Brand chips */}
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <button
+            onClick={() => setBrand('')}
+            className={`${chipBase} ${brand === '' ? chipActive : chipInactive}`}
+          >
+            Todas las marcas
+          </button>
+          {presentBrands.map(b => (
+            <button
+              key={b}
+              onClick={() => setBrand(b === brand ? '' : b)}
+              className={`${chipBase} ${brand === b ? chipActive : chipInactive}`}
+            >
+              {b}
+            </button>
+          ))}
+        </div>
+
+        {/* Row 4: Super chips + Solo ofertas */}
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <button
+            onClick={() => setSupermarket('')}
+            className={`${chipBase} ${supermarket === '' ? chipActive : chipInactive}`}
+          >
+            Todos los supers
+          </button>
+          {presentSupers.map(s => (
+            <button
+              key={s}
+              onClick={() => setSupermarket(s === supermarket ? '' : s)}
+              className={`${chipBase} ${supermarket === s ? chipActive : chipInactive}`}
+            >
+              {s}
+            </button>
+          ))}
+          <button
+            onClick={() => setOnlyOffers(v => !v)}
+            className={`${chipBase} ml-auto ${onlyOffers ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600'}`}
+          >
+            Solo ofertas
+          </button>
+        </div>
+      </div>
+
       {pvpMsg && (
         <div className={`px-4 py-2 text-xs font-medium border-b ${
           pvpMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-100'
@@ -156,11 +242,6 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
           : 'bg-blue-50 text-blue-700 border-blue-100'
         }`}>
           {pvpMsg.text}
-          {pvpMsg.type !== 'info' && (
-            <span className="ml-2 text-gray-400 font-normal">
-              Formato esperado: columnas "Producto" (o "Marca") + "PVP" (o "Precio")
-            </span>
-          )}
         </div>
       )}
 
@@ -171,20 +252,20 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
             <tr>
               <Th col="name" label="Producto" />
               <Th col="brand" label="Marca" />
-              <Th col="supermarket" label="Supermercado" />
+              <Th col="supermarket" label="Super" />
               <Th col="publishedPrice" label="Precio" right />
-              <Th col="regularPrice" label="Regular" right />
-              <Th col="offerPrice" label="Oferta" right />
-              <Th col="discount" label="Dto." right />
-              <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase text-right">PVP Sug.</th>
+              <Th col="pvpSugerido" label="PVP Sugerido" right />
               <Th col="gapPercent" label="GAP %" right />
+              <th className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase text-center">Oferta</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filtered.length === 0 ? (
-              <tr><td colSpan={9} className="py-16 text-center text-gray-400 text-sm">
-                {products.length === 0 ? 'Sin datos. Presioná "Actualizar" para ejecutar el scraping.' : 'Sin resultados para los filtros aplicados.'}
-              </td></tr>
+              <tr>
+                <td colSpan={7} className="py-16 text-center text-gray-400 text-sm">
+                  {products.length === 0 ? 'Sin datos. Presioná "Actualizar" para ejecutar el scraping.' : 'Sin resultados para los filtros aplicados.'}
+                </td>
+              </tr>
             ) : filtered.map(p => (
               <tr key={p.id} className="hover:bg-blue-50/20 transition-colors">
                 <td className="px-3 py-2.5 max-w-56">
@@ -197,23 +278,25 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium border whitespace-nowrap ${SUPERMARKET_COLORS[p.supermarket] || 'bg-gray-100 text-gray-700'}`}>{p.supermarket}</span>
                 </td>
                 <td className="px-3 py-2.5 text-right font-semibold text-gray-900 text-sm">{formatPrice(p.publishedPrice)}</td>
-                <td className="px-3 py-2.5 text-right text-gray-400 text-xs">{formatPrice(p.regularPrice)}</td>
-                <td className="px-3 py-2.5 text-right text-green-600 text-xs font-medium">{formatPrice(p.offerPrice)}</td>
-                <td className="px-3 py-2.5 text-right">
-                  {p.discount ? <span className="bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded font-bold">-{p.discount}%</span> : <span className="text-gray-300">—</span>}
-                </td>
                 <td className="px-3 py-2.5 text-right">
                   {editId === p.id ? (
                     <div className="flex items-center justify-end gap-1">
-                      <input type="number" value={editVal} onChange={e => setEditVal(e.target.value)} autoFocus
+                      <input
+                        type="number"
+                        value={editVal}
+                        onChange={e => setEditVal(e.target.value)}
+                        autoFocus
                         onKeyDown={e => { if (e.key === 'Enter') savePVP(p.id); if (e.key === 'Escape') setEditId(null); }}
-                        className="w-20 border border-blue-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        className="w-20 border border-blue-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
                       <button onClick={() => savePVP(p.id)} className="text-green-600 text-xs font-bold">✓</button>
                       <button onClick={() => setEditId(null)} className="text-red-400 text-xs">✕</button>
                     </div>
                   ) : (
-                    <button onClick={() => { setEditId(p.id); setEditVal(String(p.pvpSugerido || '')); }}
-                      className="text-xs text-gray-400 hover:text-blue-600 w-full text-right">
+                    <button
+                      onClick={() => { setEditId(p.id); setEditVal(String(p.pvpSugerido || '')); }}
+                      className="text-xs text-gray-400 hover:text-blue-600 w-full text-right"
+                    >
                       {p.pvpSugerido ? formatPrice(p.pvpSugerido) : <span className="italic">+ PVP</span>}
                     </button>
                   )}
@@ -222,6 +305,16 @@ export default function PriceTable({ products, onUpdatePVP, onBatchUpdatePVP }: 
                   {p.gapPercent !== null
                     ? <span className={`text-xs font-bold ${p.gapPercent >= 0 ? 'text-green-600' : 'text-red-500'}`}>{formatPct(p.gapPercent)}</span>
                     : <span className="text-gray-300">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-center">
+                  {p.offerPrice
+                    ? (
+                      <span className="bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded font-bold">
+                        {p.discount ? `-${p.discount}%` : formatPrice(p.offerPrice)}
+                      </span>
+                    )
+                    : <span className="text-gray-300">—</span>
+                  }
                 </td>
               </tr>
             ))}
