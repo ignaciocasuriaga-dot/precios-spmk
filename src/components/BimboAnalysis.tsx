@@ -2,6 +2,7 @@
 import { useState, useMemo } from 'react';
 import { Product } from '@/types';
 import { detectCategory, BIMBO_OWN_BRANDS, BREAD_CATEGORIES, formatPrice, SUPERMARKET_COLORS } from '@/lib/utils';
+import { SuperLogo } from '@/components/SuperLogo';
 
 type Category = 'Pan de Molde' | 'Pan de Tortuga' | 'Pan de Viena';
 const SUPERS = ['Tata', 'Disco', 'Tienda Inglesa', 'El Dorado'] as const;
@@ -126,9 +127,12 @@ export default function BimboAnalysis({ products }: Props) {
             {superAnalyses.map(({ sup, ranked, totalBrands, bimboPresent, bestBimboRank }) => (
               <div key={sup} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${SUPERMARKET_COLORS[sup] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
-                    {sup}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <SuperLogo name={sup} size={28} />
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${SUPERMARKET_COLORS[sup] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                      {sup}
+                    </span>
+                  </div>
                   {!bimboPresent ? (
                     <span className="text-xs text-gray-400 italic">Bimbo ausente</span>
                   ) : (

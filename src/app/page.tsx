@@ -8,8 +8,9 @@ import Alertas from '@/components/Alertas';
 import Cobertura from '@/components/Cobertura';
 import Historico from '@/components/Historico';
 import BimboAnalysis from '@/components/BimboAnalysis';
+import Comparativa from '@/components/Comparativa';
 
-type Tab = 'bimbo'|'catalogo'|'comparador'|'ofertas'|'alertas'|'cobertura'|'historico';
+type Tab = 'bimbo'|'catalogo'|'comparador'|'ofertas'|'alertas'|'cobertura'|'historico'|'comparativa';
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>('bimbo');
@@ -61,29 +62,38 @@ export default function Home() {
     await fetchData();
   }
 
+  async function handleBatchUpdatePVP(updates: Array<{ id: string; pvp: number }>) {
+    await Promise.all(updates.map(u =>
+      fetch('/api/prices', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: u.id, pvp: u.pvp }) })
+    ));
+    await fetchData();
+  }
+
   const offerCount = products.filter(p => p.offerPrice).length;
   const brandCount = new Set(products.map(p => p.brand)).size;
   const superCount = new Set(products.map(p => p.supermarket)).size;
   const avgPrice = products.length ? Math.round(products.reduce((a, p) => a + p.publishedPrice, 0) / products.length) : 0;
 
   const TABS = [
-    { id: 'bimbo',      label: 'Bimbo vs Comp.', count: null },
-    { id: 'catalogo',   label: 'Catálogo',       count: products.length },
-    { id: 'comparador', label: 'Comparador',     count: null },
-    { id: 'ofertas',    label: 'Ofertas',        count: offerCount },
-    { id: 'alertas',    label: 'Alertas',        count: alerts.length },
-    { id: 'cobertura',  label: 'Cobertura',      count: null },
-    { id: 'historico',  label: 'Histórico',      count: null },
+    { id: 'bimbo',       label: 'Bimbo vs Comp.', count: null },
+    { id: 'catalogo',    label: 'Catálogo',        count: products.length },
+    { id: 'comparativa', label: 'Comparativa',     count: null },
+    { id: 'comparador',  label: 'Comparador',      count: null },
+    { id: 'ofertas',     label: 'Ofertas',         count: offerCount },
+    { id: 'alertas',     label: 'Alertas',         count: alerts.length },
+    { id: 'cobertura',   label: 'Cobertura',       count: null },
+    { id: 'historico',   label: 'Histórico',       count: null },
   ];
 
   const tabContent: Record<Tab, React.ReactNode> = {
-    bimbo:      <BimboAnalysis products={products} />,
-    catalogo:   <PriceTable products={products} onUpdatePVP={handleUpdatePVP} />,
-    comparador: <Comparador products={products} />,
-    ofertas:    <Ofertas products={products} />,
-    alertas:    <Alertas alerts={alerts} />,
-    cobertura:  <Cobertura products={products} />,
-    historico:  <Historico history={history} />,
+    bimbo:       <BimboAnalysis products={products} />,
+    catalogo:    <PriceTable products={products} onUpdatePVP={handleUpdatePVP} onBatchUpdatePVP={handleBatchUpdatePVP} />,
+    comparativa: <Comparativa products={products} />,
+    comparador:  <Comparador products={products} />,
+    ofertas:     <Ofertas products={products} />,
+    alertas:     <Alertas alerts={alerts} />,
+    cobertura:   <Cobertura products={products} />,
+    historico:   <Historico history={history} />,
   };
 
   return (
